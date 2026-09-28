@@ -1,0 +1,238 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Public and core profile data for a World Challenge player",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "username": { "type": "string", "maxLength": 50, "minLength": 2 },
+        "avatar": { "type": "string", "maxLength": 500 },
+        "countryCode": { "type": "string", "maxLength": 10 },
+        "countryName": { "type": "string", "maxLength": 100 },
+        "countryFlag": { "type": "string", "maxLength": 20 },
+        "bio": { "type": "string", "maxLength": 300 },
+        "preferredLanguage": { "type": "string", "maxLength": 30 },
+        "age": { "type": "number" },
+        "level": { "type": "number" },
+        "xp": { "type": "number" },
+        "coins": { "type": "number" },
+        "gamesPlayed": { "type": "number" },
+        "gamesWon": { "type": "number" },
+        "discoveredCountries": { "type": "array" },
+        "unlockedBadges": { "type": "array" },
+        "dailyStreak": { "type": "number" },
+        "lastDailyChallengeDate": { "type": "string", "maxLength": 20 },
+        "role": { "type": "string", "maxLength": 20 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "lastActiveAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["uid", "username", "countryCode", "level", "xp"]
+    },
+    "GameRoom": {
+      "title": "GameRoom",
+      "description": "Multiplayer live synchronized game room session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "hostId": { "type": "string", "maxLength": 128 },
+        "hostUsername": { "type": "string", "maxLength": 50 },
+        "hostCountryCode": { "type": "string", "maxLength": 10 },
+        "hostCountryFlag": { "type": "string", "maxLength": 20 },
+        "hostAvatar": { "type": "string", "maxLength": 500 },
+        "hostScore": { "type": "number" },
+        "hostAnswer": { "type": "string", "maxLength": 200 },
+        "hostAnswerTime": { "type": "number" },
+        "hostReady": { "type": "boolean" },
+        "guestId": { "type": "string", "maxLength": 128 },
+        "guestUsername": { "type": "string", "maxLength": 50 },
+        "guestCountryCode": { "type": "string", "maxLength": 10 },
+        "guestCountryFlag": { "type": "string", "maxLength": 20 },
+        "guestAvatar": { "type": "string", "maxLength": 500 },
+        "guestScore": { "type": "number" },
+        "guestAnswer": { "type": "string", "maxLength": 200 },
+        "guestAnswerTime": { "type": "number" },
+        "guestReady": { "type": "boolean" },
+        "gameMode": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "maxLength": 30 },
+        "currentRound": { "type": "number" },
+        "totalRounds": { "type": "number" },
+        "questionIds": { "type": "array" },
+        "winnerId": { "type": "string", "maxLength": 128 },
+        "roundStartedAt": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "hostId", "status", "currentRound"]
+    },
+    "MatchmakingQueue": {
+      "title": "MatchmakingQueue",
+      "description": "Queue tickets for real-time worldwide matchmaking",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "username": { "type": "string", "maxLength": 50 },
+        "countryCode": { "type": "string", "maxLength": 10 },
+        "countryFlag": { "type": "string", "maxLength": 20 },
+        "avatar": { "type": "string", "maxLength": 500 },
+        "level": { "type": "number" },
+        "preferredCategory": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "maxLength": 30 },
+        "matchedRoomId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["userId", "username", "countryCode", "status"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "In-game chat message between players",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "roomId": { "type": "string", "maxLength": 128 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderUsername": { "type": "string", "maxLength": 50 },
+        "senderAvatar": { "type": "string", "maxLength": 500 },
+        "senderCountryFlag": { "type": "string", "maxLength": 20 },
+        "text": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "roomId", "senderId", "text"]
+    },
+    "PassportCountry": {
+      "title": "PassportCountry",
+      "description": "Virtual passport country stamp and discovery details for a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "countryCode": { "type": "string", "maxLength": 10 },
+        "countryName": { "type": "string", "maxLength": 100 },
+        "countryFlag": { "type": "string", "maxLength": 20 },
+        "capital": { "type": "string", "maxLength": 100 },
+        "continent": { "type": "string", "maxLength": 50 },
+        "unlockedAt": { "type": "string", "maxLength": 50 },
+        "metPlayerUsername": { "type": "string", "maxLength": 50 },
+        "metPlayerAvatar": { "type": "string", "maxLength": 500 },
+        "gamesPlayedWith": { "type": "number" },
+        "scoreAchieved": { "type": "number" }
+      },
+      "required": ["id", "userId", "countryCode", "countryName"]
+    },
+    "Friendship": {
+      "title": "Friendship",
+      "description": "Social connection or friend request between players",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "requesterId": { "type": "string", "maxLength": 128 },
+        "requesterUsername": { "type": "string", "maxLength": 50 },
+        "requesterCountryFlag": { "type": "string", "maxLength": 20 },
+        "requesterAvatar": { "type": "string", "maxLength": 500 },
+        "receiverId": { "type": "string", "maxLength": 128 },
+        "receiverUsername": { "type": "string", "maxLength": 50 },
+        "receiverCountryFlag": { "type": "string", "maxLength": 20 },
+        "receiverAvatar": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "requesterId", "receiverId", "status"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Safety report submitted against a user or behavior",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "reporterId": { "type": "string", "maxLength": 128 },
+        "reporterUsername": { "type": "string", "maxLength": 50 },
+        "reportedUserId": { "type": "string", "maxLength": 128 },
+        "reportedUsername": { "type": "string", "maxLength": 50 },
+        "reason": { "type": "string", "maxLength": 200 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "reporterId", "reportedUserId", "reason"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "Cultural mini-game question item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "category": { "type": "string", "maxLength": 50 },
+        "countryCode": { "type": "string", "maxLength": 10 },
+        "countryName": { "type": "string", "maxLength": 100 },
+        "difficulty": { "type": "string", "maxLength": 20 },
+        "prompt": { "type": "string", "maxLength": 500 },
+        "options": { "type": "array" },
+        "correctAnswer": { "type": "string", "maxLength": 200 },
+        "explanation": { "type": "string", "maxLength": 500 },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "meta": { "type": "string", "maxLength": 500 },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "category", "prompt", "options", "correctAnswer"]
+    },
+    "Country": {
+      "title": "Country",
+      "description": "Master country repository data",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "maxLength": 10 },
+        "name": { "type": "string", "maxLength": 100 },
+        "flag": { "type": "string", "maxLength": 20 },
+        "capital": { "type": "string", "maxLength": 100 },
+        "continent": { "type": "string", "maxLength": 50 },
+        "languages": { "type": "array" },
+        "traditionalFoods": { "type": "array" },
+        "landmarks": { "type": "array" },
+        "facts": { "type": "array" },
+        "badgeTitle": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["code", "name", "flag", "capital", "continent"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores user profiles, XP, level, unlocked countries summary, coins"
+    },
+    "/gameRooms/{roomId}": {
+      "schema": "GameRoom",
+      "description": "Real-time game sessions between two players"
+    },
+    "/gameRooms/{roomId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "In-game chat messages"
+    },
+    "/matchmaking/{ticketId}": {
+      "schema": "MatchmakingQueue",
+      "description": "Active matchmaking tickets waiting for opponents"
+    },
+    "/users/{userId}/passport/{countryCode}": {
+      "schema": "PassportCountry",
+      "description": "Unlocked virtual passport stamps for this user"
+    },
+    "/friendships/{friendshipId}": {
+      "schema": "Friendship",
+      "description": "Social relations and friend requests between players"
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Safety violation reports for moderation"
+    },
+    "/questions/{questionId}": {
+      "schema": "Question",
+      "description": "Cultural questions across all game categories"
+    },
+    "/countries/{countryCode}": {
+      "schema": "Country",
+      "description": "Master catalog of countries and cultural metadata"
+    }
+  }
+}

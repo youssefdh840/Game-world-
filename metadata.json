@@ -1,0 +1,6 @@
+{
+  "name": "World Challenge",
+  "description": "A social multiplayer mobile game to meet people from around the world and play cultural mini-games.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

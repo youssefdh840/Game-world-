@@ -1,0 +1,141 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'youssefdh840@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Admins Collection
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow get: if isValidId(userId);
+      allow list: if true;
+
+      allow create: if isOwner(userId) && isValidId(userId) &&
+        incoming().uid == userId &&
+        incoming().username is string && incoming().username.size() >= 2 && incoming().username.size() <= 50;
+
+      allow update: if (isOwner(userId) || isAdmin()) && isValidId(userId);
+      allow delete: if isAdmin();
+
+      // Subcollection: Passport
+      match /passport/{countryCode} {
+        allow read: if isValidId(userId);
+        allow create, update: if (isOwner(userId) || isAdmin()) && isValidId(countryCode);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // Game Rooms Collection
+    match /gameRooms/{roomId} {
+      allow get: if isSignedIn() && isValidId(roomId);
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() && isValidId(roomId) &&
+        incoming().hostId == request.auth.uid;
+
+      allow update: if isSignedIn() && isValidId(roomId) && (
+        isAdmin() ||
+        resource.data.hostId == request.auth.uid ||
+        resource.data.guestId == request.auth.uid ||
+        (resource.data.status == 'waiting' && incoming().guestId == request.auth.uid)
+      );
+
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.hostId == request.auth.uid);
+
+      // In-Game Messages
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && isValidId(roomId);
+        allow create: if isSignedIn() && isValidId(messageId) &&
+          incoming().senderId == request.auth.uid &&
+          incoming().text is string && incoming().text.size() <= 500;
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // Matchmaking Queue
+    match /matchmaking/{ticketId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(ticketId) &&
+        incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(ticketId);
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Friendships Collection
+    match /friendships/{friendshipId} {
+      allow read: if isSignedIn() && (
+        resource.data.requesterId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() && isValidId(friendshipId) &&
+        incoming().requesterId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(friendshipId) && (
+        resource.data.requesterId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid ||
+        isAdmin()
+      );
+      allow delete: if isSignedIn() && (
+        resource.data.requesterId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // Reports Collection
+    match /reports/{reportId} {
+      allow create: if isSignedIn() && isValidId(reportId) &&
+        incoming().reporterId == request.auth.uid;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Questions Catalog
+    match /questions/{questionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Countries Catalog
+    match /countries/{countryCode} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
