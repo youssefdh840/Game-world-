@@ -62,7 +62,21 @@ export function calculateLevel(xp: number) {
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  if (!uid || uid.startsWith('guest_') || !auth.currentUser) return null;
+  if (!uid) return null;
+  if (uid.startsWith('guest_') || !auth.currentUser) {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('wc_cached_profile');
+        if (cached) {
+          const parsed = JSON.parse(cached) as UserProfile;
+          if (parsed.uid === uid) return parsed;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return null;
+  }
   const path = `users/${uid}`;
   try {
     const snap = await getDoc(doc(db, 'users', uid));
@@ -71,7 +85,15 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     }
     return null;
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
+    console.warn(`Could not load profile for ${uid} from Firestore:`, error);
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('wc_cached_profile');
+        if (cached) return JSON.parse(cached) as UserProfile;
+      } catch {
+        // ignore
+      }
+    }
     return null;
   }
 }
@@ -89,28 +111,54 @@ export function subscribeToUserProfile(uid: string, callback: (profile: UserProf
       }
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      console.warn(`Profile snapshot warning for ${uid}:`, error);
     }
   );
 }
 
 export async function createUserProfile(profile: UserProfile): Promise<void> {
-  if (!profile?.uid || profile.uid.startsWith('guest_') || !auth.currentUser) return;
+  if (!profile?.uid) return;
+
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('wc_cached_profile', JSON.stringify(profile));
+    } catch {
+      // ignore
+    }
+  }
+
+  if (profile.uid.startsWith('guest_') || !auth.currentUser) return;
   const path = `users/${profile.uid}`;
   try {
     await setDoc(doc(db, 'users', profile.uid), profile);
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
+    console.warn(`Could not write user profile to Firestore:`, error);
   }
 }
 
 export async function updateUserProfile(uid: string, updates: Partial<UserProfile>): Promise<void> {
-  if (!uid || uid.startsWith('guest_') || !auth.currentUser) return;
+  if (!uid) return;
+
+  // Optimistically update local cached profile so UI refreshes immediately
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('wc_cached_profile');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const updated = { ...parsed, ...updates };
+        localStorage.setItem('wc_cached_profile', JSON.stringify(updated));
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (uid.startsWith('guest_') || !auth.currentUser) return;
   const path = `users/${uid}`;
   try {
     await updateDoc(doc(db, 'users', uid), updates);
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    console.warn(`Could not update user profile in Firestore:`, error);
   }
 }
 
@@ -166,10 +214,26 @@ export async function awardGameResults(
       scoreAchieved: xpEarned,
     };
 
-    try {
-      await setDoc(doc(db, 'users', uid, 'passport', code), stamp);
-    } catch {
-      // Non-fatal if stamp write fails
+    // Save locally
+    if (typeof window !== 'undefined') {
+      try {
+        const localKey = `wc_stamps_${uid}`;
+        const existing: PassportStamp[] = JSON.parse(localStorage.getItem(localKey) || '[]');
+        if (!existing.some((s) => s.countryCode === code)) {
+          existing.push(stamp);
+          localStorage.setItem(localKey, JSON.stringify(existing));
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (auth.currentUser && !uid.startsWith('guest_')) {
+      try {
+        await setDoc(doc(db, 'users', uid, 'passport', code), stamp);
+      } catch {
+        // Non-fatal if stamp write fails
+      }
     }
   }
 
@@ -233,15 +297,40 @@ export async function awardGameResults(
 }
 
 export async function getUserPassportStamps(uid: string): Promise<PassportStamp[]> {
-  if (!uid || uid.startsWith('guest_') || !auth.currentUser) {
+  if (!uid) return [];
+  if (uid.startsWith('guest_') || !auth.currentUser) {
+    if (typeof window !== 'undefined') {
+      try {
+        const local = localStorage.getItem(`wc_stamps_${uid}`);
+        if (local) return JSON.parse(local);
+      } catch {
+        // ignore
+      }
+    }
     return [];
   }
   const path = `users/${uid}/passport`;
   try {
     const snap = await getDocs(collection(db, 'users', uid, 'passport'));
-    return snap.docs.map((d) => d.data() as PassportStamp);
+    const stamps = snap.docs.map((d) => d.data() as PassportStamp);
+    if (typeof window !== 'undefined' && stamps.length > 0) {
+      try {
+        localStorage.setItem(`wc_stamps_${uid}`, JSON.stringify(stamps));
+      } catch {
+        // ignore
+      }
+    }
+    return stamps;
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
+    console.warn(`Could not load stamps for ${uid} from Firestore:`, error);
+    if (typeof window !== 'undefined') {
+      try {
+        const local = localStorage.getItem(`wc_stamps_${uid}`);
+        if (local) return JSON.parse(local);
+      } catch {
+        // ignore
+      }
+    }
     return [];
   }
 }

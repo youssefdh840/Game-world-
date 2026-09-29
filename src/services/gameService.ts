@@ -8,7 +8,7 @@ import {
   orderBy,
   limit,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { GameRoom, ChatMessage, ReportItem } from '../types/game';
 
 export function subscribeToGameRoom(
@@ -16,6 +16,9 @@ export function subscribeToGameRoom(
   onUpdate: (room: GameRoom) => void,
   onError?: (err: unknown) => void
 ) {
+  if (roomId.startsWith('room_bot_') || !auth.currentUser) {
+    return () => {};
+  }
   const path = `gameRooms/${roomId}`;
   return onSnapshot(
     doc(db, 'gameRooms', roomId),
@@ -26,7 +29,7 @@ export function subscribeToGameRoom(
     },
     (error) => {
       if (onError) onError(error);
-      handleFirestoreError(error, OperationType.GET, path);
+      console.warn(`Game room snapshot warning (${roomId}):`, error);
     }
   );
 }
@@ -39,6 +42,9 @@ export async function submitPlayerAnswer(
   isCorrect: boolean,
   room: GameRoom
 ) {
+  if (roomId.startsWith('room_bot_') || !auth.currentUser) {
+    return;
+  }
   const path = `gameRooms/${roomId}`;
   const isHost = room.hostId === userId;
   const pointsEarned = isCorrect
@@ -61,7 +67,7 @@ export async function submitPlayerAnswer(
   try {
     await updateDoc(doc(db, 'gameRooms', roomId), updates);
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    console.warn(`Could not update player answer (${roomId}):`, error);
   }
 }
 
@@ -69,6 +75,9 @@ export async function advanceToNextRoundOrFinish(
   roomId: string,
   room: GameRoom
 ) {
+  if (roomId.startsWith('room_bot_') || !auth.currentUser) {
+    return;
+  }
   const path = `gameRooms/${roomId}`;
   const nextRound = room.currentRound + 1;
 
@@ -89,7 +98,7 @@ export async function advanceToNextRoundOrFinish(
     try {
       await updateDoc(doc(db, 'gameRooms', roomId), updates);
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
+      console.warn(`Could not finish game (${roomId}):`, error);
     }
     return;
   }
@@ -111,7 +120,7 @@ export async function advanceToNextRoundOrFinish(
   try {
     await updateDoc(doc(db, 'gameRooms', roomId), updates);
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    console.warn(`Could not advance round (${roomId}):`, error);
   }
 }
 

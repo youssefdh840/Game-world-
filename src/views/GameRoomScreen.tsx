@@ -156,6 +156,37 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     };
   }, [room.currentRound, room.status]);
 
+  const advanceRound = () => {
+    const nextRound = room.currentRound + 1;
+    if (nextRound > room.totalRounds) {
+      let winnerId: string | 'tie' = 'tie';
+      if (room.hostScore > room.guestScore) {
+        winnerId = room.hostId;
+      } else if (room.guestScore > room.hostScore) {
+        winnerId = room.guestId;
+      }
+      setRoom((prev) => ({
+        ...prev,
+        status: 'finished',
+        winnerId,
+      }));
+    } else {
+      const nextQuestion = room.questions ? room.questions[nextRound - 1] : undefined;
+      setRoom((prev) => ({
+        ...prev,
+        currentRound: nextRound,
+        currentQuestion: nextQuestion,
+        status: 'playing',
+        hostAnswer: null,
+        hostAnswerTime: null,
+        guestAnswer: null,
+        guestAnswerTime: null,
+        roundStartedAt: Date.now(),
+      }));
+    }
+    advanceToNextRoundOrFinish(room.id, room);
+  };
+
   // Monitor when both players have answered
   useEffect(() => {
     const hostDone = Boolean(room.hostAnswer);
@@ -167,7 +198,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
       // Advance after 2.8 seconds
       const timeout = setTimeout(() => {
-        advanceToNextRoundOrFinish(room.id, room);
+        advanceRound();
       }, 2800);
 
       return () => clearTimeout(timeout);
@@ -201,7 +232,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     }
 
     setTimeout(() => {
-      advanceToNextRoundOrFinish(room.id, room);
+      advanceRound();
     }, 2800);
   };
 

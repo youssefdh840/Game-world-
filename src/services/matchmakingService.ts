@@ -8,7 +8,7 @@ import {
   getDocs,
   onSnapshot,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { UserProfile, GameCategory, GameRoom } from '../types/game';
 import { getRandomQuestions, getQuestionsByCategory } from './questionData';
 import { SEED_LEADERBOARD } from './userService';
@@ -208,10 +208,12 @@ export async function createBotGameRoom(
     updatedAt: new Date().toISOString(),
   };
 
-  try {
-    await setDoc(doc(db, 'gameRooms', roomId), roomData);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `gameRooms/${roomId}`);
+  if (auth.currentUser && !user.uid.startsWith('guest_')) {
+    try {
+      await setDoc(doc(db, 'gameRooms', roomId), roomData);
+    } catch (error) {
+      console.warn(`Could not sync bot room to Firestore (${roomId}):`, error);
+    }
   }
 
   return roomData;

@@ -36,30 +36,43 @@ function AppContent() {
   const [stamps, setStamps] = useState<PassportStamp[]>([]);
 
   useEffect(() => {
+    const defaultStarter = userProfile?.countryCode
+      ? (() => {
+          const countryInfo = COUNTRIES.find((c) => c.code === userProfile.countryCode);
+          if (!countryInfo) return [];
+          return [
+            {
+              id: `starter_${userProfile.countryCode}`,
+              userId: userProfile.uid,
+              countryCode: userProfile.countryCode,
+              countryName: countryInfo.name,
+              countryFlag: countryInfo.flag,
+              capital: countryInfo.capital,
+              continent: countryInfo.continent,
+              unlockedAt: userProfile.createdAt,
+              metPlayerUsername: 'Home Country',
+              metPlayerAvatar: countryInfo.flag,
+              gamesPlayedWith: 0,
+              scoreAchieved: 0,
+            },
+          ];
+        })()
+      : [];
+
     if (userProfile?.uid && !userProfile.uid.startsWith('guest_')) {
       getUserPassportStamps(userProfile.uid)
-        .then((s) => setStamps(s || []))
-        .catch(() => {});
-    } else if (userProfile?.countryCode) {
-      const countryInfo = COUNTRIES.find((c) => c.code === userProfile.countryCode);
-      if (countryInfo) {
-        setStamps([
-          {
-            id: `starter_${userProfile.countryCode}`,
-            userId: userProfile.uid,
-            countryCode: userProfile.countryCode,
-            countryName: countryInfo.name,
-            countryFlag: countryInfo.flag,
-            capital: countryInfo.capital,
-            continent: countryInfo.continent,
-            unlockedAt: userProfile.createdAt,
-            metPlayerUsername: 'Home Country',
-            metPlayerAvatar: countryInfo.flag,
-            gamesPlayedWith: 0,
-            scoreAchieved: 0,
-          },
-        ]);
-      }
+        .then((s) => {
+          if (s && s.length > 0) {
+            setStamps(s);
+          } else {
+            setStamps(defaultStarter);
+          }
+        })
+        .catch(() => {
+          setStamps(defaultStarter);
+        });
+    } else {
+      setStamps(defaultStarter);
     }
   }, [userProfile?.uid, userProfile?.countryCode, userProfile?.discoveredCountries?.length]);
 
