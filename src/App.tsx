@@ -78,7 +78,7 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-slate-100">
+      <div className="min-h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-4 text-slate-100">
         <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 flex items-center justify-center text-3xl shadow-xl shadow-rose-500/20 animate-bounce mb-4">
           🌍
         </div>
@@ -109,7 +109,7 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-rose-500 selection:text-white flex flex-col">
+    <div className="min-h-[100dvh] w-full bg-slate-950 text-slate-100 selection:bg-rose-500 selection:text-white flex flex-col">
       {/* Top Header */}
       <TopHeader
         onOpenDailyChallenge={() => setIsDailyChallengeOpen(true)}

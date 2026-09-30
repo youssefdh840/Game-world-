@@ -50,7 +50,7 @@ export const TopHeader: React.FC<{
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 py-2.5">
+    <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 pt-safe pb-2.5">
       <div className="max-w-md mx-auto flex items-center justify-between">
         {/* Brand / Title */}
         <div className="flex items-center gap-2">

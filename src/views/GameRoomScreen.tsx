@@ -521,9 +521,10 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   // ACTIVE PLAYING GAME ARENA
   // -------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between max-w-md mx-auto relative select-none">
-      {/* Top Header: VS Scoreboard */}
-      <div className="bg-slate-900 border-b border-slate-800 p-3 sticky top-0 z-30 shadow-md">
+    <div className="w-full min-h-[100dvh] bg-slate-950 text-slate-100 flex justify-center">
+      <div className="w-full max-w-md min-h-[100dvh] bg-slate-950 flex flex-col justify-between relative select-none">
+        {/* Top Header: VS Scoreboard */}
+        <div className="bg-slate-900 border-b border-slate-800 p-3 pt-safe sticky top-0 z-30 shadow-md">
         <div className="flex items-center justify-between">
           {/* Player A (You) */}
           <div className="flex items-center gap-2">
@@ -844,6 +845,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };
