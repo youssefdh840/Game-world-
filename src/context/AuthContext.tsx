@@ -60,6 +60,32 @@ function createFallbackProfile(uid: string = 'guest_' + Math.random().toString(3
   };
 }
 
+function formatAuthError(err: unknown): Error {
+  const code = (err as { code?: string })?.code || '';
+  const msg = err instanceof Error ? err.message : String(err);
+
+  if (code === 'auth/invalid-api-key' || msg.includes('API key not valid') || msg.includes('invalid-api-key')) {
+    return new Error(
+      'Firebase API key is invalid (auth/invalid-api-key). The current key in Firebase project settings is rejecting requests. Click "Guest Play" below to play immediately, or check Firebase Console.'
+    );
+  }
+  if (code === 'auth/operation-not-allowed') {
+    return new Error(
+      'This sign-in method is not enabled in Firebase Console (Authentication -> Sign-in method). Use "Guest Play" to start immediately!'
+    );
+  }
+  if (code === 'auth/email-already-in-use') {
+    return new Error('This email is already in use. Please sign in instead.');
+  }
+  if (code === 'auth/wrong-password' || code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
+    return new Error('Invalid email or password.');
+  }
+  if (code === 'auth/popup-closed-by-user') {
+    return new Error('Google sign-in popup was closed.');
+  }
+  return new Error(msg);
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(() => {
@@ -145,7 +171,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error('Error fetching user profile:', err);
         }
       } else {
-        // Automatically sign in as anonymous guest if not signed in
+        // Automatically attempt sign in as anonymous guest if not signed in, safely ignore if rejected
         signInAnonymously(auth).catch((err) => {
           console.warn('Anonymous sign-in deferred:', err);
         });
@@ -160,12 +186,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signInWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      throw formatAuthError(err);
+    }
   };
 
   const signInWithEmail = async (email: string, pass: string) => {
-    await signInWithEmailAndPassword(auth, email, pass);
+    try {
+      await signInWithEmailAndPassword(auth, email, pass);
+    } catch (err) {
+      throw formatAuthError(err);
+    }
   };
 
   const signUpWithEmail = async (
@@ -173,45 +207,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     pass: string,
     profileData: Partial<UserProfile>
   ) => {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    const selectedCountry = COUNTRIES.find((c) => c.code === profileData.countryCode) || COUNTRIES[0];
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, pass);
+      const selectedCountry = COUNTRIES.find((c) => c.code === profileData.countryCode) || COUNTRIES[0];
 
-    const newProfile: UserProfile = {
-      uid: cred.user.uid,
-      username: profileData.username || `Explorer_${cred.user.uid.slice(0, 4)}`,
-      email: cred.user.email || undefined,
-      avatar: profileData.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80',
-      countryCode: selectedCountry.code,
-      countryName: selectedCountry.name,
-      countryFlag: selectedCountry.flag,
-      bio: profileData.bio || 'World traveler ready for cultural challenges!',
-      preferredLanguage: profileData.preferredLanguage || 'English',
-      age: profileData.age,
-      level: 1,
-      xp: 0,
-      coins: 150,
-      gamesPlayed: 0,
-      gamesWon: 0,
-      discoveredCountries: [selectedCountry.code],
-      unlockedBadges: [],
-      dailyStreak: 1,
-      role: email === 'youssefdh840@gmail.com' ? 'admin' : 'user',
-      createdAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-    };
+      const newProfile: UserProfile = {
+        uid: cred.user.uid,
+        username: profileData.username || `Explorer_${cred.user.uid.slice(0, 4)}`,
+        email: cred.user.email || undefined,
+        avatar: profileData.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80',
+        countryCode: selectedCountry.code,
+        countryName: selectedCountry.name,
+        countryFlag: selectedCountry.flag,
+        bio: profileData.bio || 'World traveler ready for cultural challenges!',
+        preferredLanguage: profileData.preferredLanguage || 'English',
+        age: profileData.age,
+        level: 1,
+        xp: 0,
+        coins: 150,
+        gamesPlayed: 0,
+        gamesWon: 0,
+        discoveredCountries: [selectedCountry.code],
+        unlockedBadges: [],
+        dailyStreak: 1,
+        role: email === 'youssefdh840@gmail.com' ? 'admin' : 'user',
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+      };
 
-    await createUserProfile(newProfile);
-    setUserProfile(newProfile);
+      await createUserProfile(newProfile);
+      setUserProfile(newProfile);
+    } catch (err) {
+      throw formatAuthError(err);
+    }
   };
 
   const signInAsGuest = async (customUsername?: string, countryCode?: string) => {
-    const cred = await signInAnonymously(auth);
+    let guestUid = 'guest_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
+    try {
+      const cred = await signInAnonymously(auth);
+      if (cred?.user?.uid) {
+        guestUid = cred.user.uid;
+      }
+    } catch (err) {
+      console.warn('Firebase anonymous auth skipped, running with local guest session:', err);
+    }
+
     const selectedCountry = COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
 
     const guestProfile: UserProfile = {
-      uid: cred.user.uid,
+      uid: guestUid,
       username: customUsername || `Player_${Math.floor(1000 + Math.random() * 9000)}`,
-      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${cred.user.uid}`,
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${guestUid}`,
       countryCode: selectedCountry.code,
       countryName: selectedCountry.name,
       countryFlag: selectedCountry.flag,
@@ -235,7 +282,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const resetPassword = async (email: string) => {
-    await sendPasswordResetEmail(auth, email);
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (err) {
+      throw formatAuthError(err);
+    }
   };
 
   const logout = async () => {

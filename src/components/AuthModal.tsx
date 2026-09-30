@@ -2,14 +2,16 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { COUNTRIES } from '../services/countryData';
 import { sounds } from '../services/soundEffects';
-import { Globe, Lock, Mail, User, Sparkles, ArrowRight, X } from 'lucide-react';
+import { Globe, Lock, Mail, User, Sparkles, ArrowRight, X, KeyRound } from 'lucide-react';
+import { FirebaseConfigModal } from './FirebaseConfigModal';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialMode?: 'login' | 'signup' | 'guest';
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
   const {
     signInWithGoogle,
     signInWithEmail,
@@ -18,7 +20,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     resetPassword,
   } = useAuth();
 
-  const [mode, setMode] = useState<'login' | 'signup' | 'guest' | 'reset'>('signup');
+  const [mode, setMode] = useState<'login' | 'signup' | 'guest' | 'reset'>(initialMode);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setMode(initialMode);
+      setError(null);
+    }
+  }, [isOpen, initialMode]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -28,6 +37,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const [isFirebaseConfigOpen, setIsFirebaseConfigOpen] = useState(false);
 
   if (!isOpen) return null;
 
@@ -162,8 +172,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
         {/* Error Notification */}
         {error && (
-          <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs rounded-xl">
-            {error}
+          <div className="mb-4 p-3.5 bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs rounded-2xl space-y-2">
+            <div className="flex items-start gap-2">
+              <span className="text-sm">⚠️</span>
+              <p className="leading-relaxed">{error}</p>
+            </div>
+            {error.toLowerCase().includes('api-key') && mode !== 'guest' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('guest');
+                  setError(null);
+                  sounds.playPop();
+                }}
+                className="w-full py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-extrabold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>⚡ Play Instantly as Guest (No Login Required)</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -333,13 +359,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 setResetSent(false);
                 setError(null);
               }}
-              className="text-xs text-indigo-400 hover:underline"
+              className="text-xs text-indigo-400 hover:underline cursor-pointer"
             >
               Back to Login
             </button>
           </div>
         )}
+
+        {/* Firebase Config / Key Diagnostics Link */}
+        <div className="mt-5 pt-3 border-t border-slate-800/80 text-center">
+          <button
+            type="button"
+            onClick={() => {
+              sounds.playPop();
+              setIsFirebaseConfigOpen(true);
+            }}
+            className="text-[11px] text-slate-400 hover:text-amber-300 transition-colors inline-flex items-center gap-1.5 cursor-pointer font-semibold"
+          >
+            <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+            <span>Firebase API Key Settings & Diagnostics</span>
+          </button>
+        </div>
       </div>
+
+      <FirebaseConfigModal
+        isOpen={isFirebaseConfigOpen}
+        onClose={() => setIsFirebaseConfigOpen(false)}
+      />
     </div>
   );
 };

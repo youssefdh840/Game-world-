@@ -5,6 +5,7 @@ import { COUNTRIES } from '../services/countryData';
 import { BADGES } from '../services/badgesData';
 import { updateUserProfile, calculateLevel } from '../services/userService';
 import { sounds } from '../services/soundEffects';
+import { FirebaseConfigModal } from '../components/FirebaseConfigModal';
 import {
   User,
   Globe,
@@ -19,6 +20,8 @@ import {
   Save,
   Volume2,
   VolumeX,
+  KeyRound,
+  LogIn,
 } from 'lucide-react';
 
 interface ProfileScreenProps {
@@ -42,6 +45,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [language, setLanguage] = useState(user.preferredLanguage || 'English');
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isFirebaseConfigOpen, setIsFirebaseConfigOpen] = useState(false);
 
   const levelInfo = calculateLevel(user.xp);
   const winRate =
@@ -338,33 +342,78 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </button>
         </div>
 
+        {/* Firebase & Cloud Diagnostics */}
+        <div className="flex items-center justify-between py-1 border-t border-slate-800 pt-3">
+          <div className="flex items-center gap-2.5 text-xs text-slate-300 font-semibold">
+            <KeyRound className="w-4 h-4 text-amber-400" />
+            <div>
+              <span>Firebase & Cloud Sync</span>
+              <p className="text-[10px] text-slate-500 font-normal">Check connection status & API key</p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              sounds.playPop();
+              setIsFirebaseConfigOpen(true);
+            }}
+            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition-colors cursor-pointer"
+          >
+            Configure
+          </button>
+        </div>
+
         {/* Auth / Logout / Login */}
         <div className="pt-2 border-t border-slate-800">
-          {firebaseUser ? (
-            <button
-              onClick={() => {
-                sounds.playPop();
-                logout();
-              }}
-              className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Sign Out of Account</span>
-            </button>
+          {firebaseUser && !firebaseUser.isAnonymous ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-300 bg-slate-950/60 p-3 rounded-2xl border border-slate-800">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <div>
+                    <span className="font-bold text-white block">{firebaseUser.email || user.username}</span>
+                    <span className="text-[10px] text-emerald-400 font-semibold">Account Synced to Firebase Cloud</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  sounds.playPop();
+                  logout();
+                }}
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out of Account</span>
+              </button>
+            </div>
           ) : (
-            <button
-              onClick={() => {
-                sounds.playPop();
-                onOpenAuth();
-              }}
-              className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
-            >
-              <User className="w-4 h-4" />
-              <span>Link Account / Sign In</span>
-            </button>
+            <div className="space-y-2">
+              <div className="bg-indigo-950/40 border border-indigo-500/30 p-3 rounded-2xl">
+                <span className="text-xs font-bold text-indigo-300 block mb-0.5">Playing in Guest Mode</span>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Log in or create a free account to permanently save your progress, coins, country stamps, and rank.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  sounds.playPop();
+                  onOpenAuth();
+                }}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20 active:scale-95 transition-all cursor-pointer"
+              >
+                <LogIn className="w-4 h-4 stroke-[2.5]" />
+                <span>Log In / Create Account</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
+
+      {/* Firebase Config & Diagnostics Modal */}
+      <FirebaseConfigModal
+        isOpen={isFirebaseConfigOpen}
+        onClose={() => setIsFirebaseConfigOpen(false)}
+      />
     </div>
   );
 };

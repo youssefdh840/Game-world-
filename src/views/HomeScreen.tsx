@@ -12,6 +12,7 @@ import {
   Compass,
   ArrowRight,
   Zap,
+  LogIn,
 } from 'lucide-react';
 import { sounds } from '../services/soundEffects';
 
@@ -63,15 +64,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <h2 className="text-xl font-black text-white tracking-tight">
                   {userProfile?.username || 'Traveler'}
                 </h2>
-                {!firebaseUser && (
+                {(!firebaseUser || firebaseUser.isAnonymous) && (
                   <button
                     onClick={() => {
                       sounds.playPop();
                       onOpenAuth();
                     }}
-                    className="text-[10px] bg-indigo-600/60 hover:bg-indigo-600 text-indigo-200 px-2 py-0.5 rounded-full font-bold"
+                    className="inline-flex items-center gap-1 text-[11px] bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold px-2.5 py-0.5 rounded-full shadow-md active:scale-95 transition-all cursor-pointer"
                   >
-                    Save Profile
+                    <LogIn className="w-3 h-3 stroke-[2.5]" />
+                    <span>Log In</span>
                   </button>
                 )}
               </div>

@@ -7,11 +7,12 @@ import {
   where,
   getDocs,
   onSnapshot,
+  getDoc,
+  updateDoc,
 } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from './firebase';
+import { db, auth } from './firebase';
 import { UserProfile, GameCategory, GameRoom } from '../types/game';
 import { getRandomQuestions, getQuestionsByCategory } from './questionData';
-import { SEED_LEADERBOARD } from './userService';
 
 export interface MatchTicket {
   userId: string;
@@ -26,33 +27,42 @@ export interface MatchTicket {
   createdAt: string;
 }
 
+export interface JoinQueueResult {
+  ticketId: string;
+  unsubscribe: () => void;
+  matchedRoom?: GameRoom;
+}
+
+// Joins the worldwide matchmaking queue for REAL PLAYERS ONLY
 export async function joinMatchmakingQueue(
   user: UserProfile,
   preferredCategory: GameCategory | 'mixed' = 'mixed'
-): Promise<{ ticketId: string; unsubscribe: () => void }> {
+): Promise<JoinQueueResult> {
   const ticketId = `ticket_${user.uid}`;
-  const path = `matchmaking/${ticketId}`;
 
-  // Check if any other user is currently waiting in queue
+  // 1. Check if another real player is already waiting in queue
   try {
     const q = query(
       collection(db, 'matchmaking'),
       where('status', '==', 'waiting')
     );
     const snap = await getDocs(q);
+
+    // Filter out our own ticket and find valid real human opponent
     const opponents = snap.docs
       .map((d) => ({ id: d.id, ...(d.data() as MatchTicket) }))
-      .filter((t) => t.userId !== user.uid);
+      .filter((t) => t.userId && t.userId !== user.uid);
 
     if (opponents.length > 0) {
-      // Found an opponent waiting!
+      // Pick the first waiting opponent
       const opponentTicket = opponents[0];
       const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-      // Pick questions
-      const questions = preferredCategory === 'mixed'
-        ? getRandomQuestions(5)
-        : getQuestionsByCategory(preferredCategory, 5);
+      // Select 5 real questions
+      const questions =
+        preferredCategory === 'mixed'
+          ? getRandomQuestions(5)
+          : getQuestionsByCategory(preferredCategory, 5);
 
       const roomData: GameRoom = {
         id: roomId,
@@ -80,31 +90,38 @@ export async function joinMatchmakingQueue(
         questions,
         currentQuestion: questions[0],
         roundStartedAt: Date.now() + 3000,
+        isBotOpponent: false, // NO BOTS - REAL PEOPLE ONLY
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
-      // Create room
+      // Create live game room in Firestore
       await setDoc(doc(db, 'gameRooms', roomId), roomData);
 
-      // Update opponent's ticket so their listener forwards them
+      // Signal the waiting opponent by updating their ticket
       await setDoc(
         doc(db, 'matchmaking', opponentTicket.id),
         { status: 'matched', matchedRoomId: roomId },
         { merge: true }
       );
 
-      // Return instant match
+      // Clean up opponent ticket after a short grace period
+      setTimeout(() => {
+        deleteDoc(doc(db, 'matchmaking', opponentTicket.id)).catch(() => {});
+      }, 5000);
+
+      // Return instant match with the created room
       return {
         ticketId,
+        matchedRoom: roomData,
         unsubscribe: () => {},
       };
     }
   } catch (err) {
-    console.warn('Queue check error, continuing to post ticket:', err);
+    console.warn('Queue search notice:', err);
   }
 
-  // If no opponent found yet, publish our own ticket
+  // 2. No opponent currently waiting: post our own ticket
   const ticketData: MatchTicket = {
     userId: user.uid,
     username: user.username,
@@ -120,26 +137,22 @@ export async function joinMatchmakingQueue(
   try {
     await setDoc(doc(db, 'matchmaking', ticketId), ticketData);
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
+    console.warn('Could not post matchmaking ticket to Firestore:', error);
   }
 
-  // Subscribe to changes on this ticket
-  let unsub = () => {};
   return {
     ticketId,
     unsubscribe: () => {
-      unsub();
-      // Remove ticket on leave
       deleteDoc(doc(db, 'matchmaking', ticketId)).catch(() => {});
     },
   };
 }
 
+// Listens to ticket updates when another real player matches with us
 export function listenToMatchmakingTicket(
   ticketId: string,
   onMatched: (roomId: string) => void
 ) {
-  const path = `matchmaking/${ticketId}`;
   return onSnapshot(
     doc(db, 'matchmaking', ticketId),
     (snap) => {
@@ -151,11 +164,12 @@ export function listenToMatchmakingTicket(
       }
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      console.warn(`Matchmaking ticket listen notice (${ticketId}):`, error);
     }
   );
 }
 
+// Cancel / leave queue
 export async function leaveMatchmakingQueue(ticketId: string) {
   try {
     await deleteDoc(doc(db, 'matchmaking', ticketId));
@@ -164,18 +178,30 @@ export async function leaveMatchmakingQueue(ticketId: string) {
   }
 }
 
-// Create an instant single-player vs AI Challenger match from any country
-export async function createBotGameRoom(
-  user: UserProfile,
-  preferredCategory: GameCategory | 'mixed' = 'mixed',
-  botSeed?: typeof SEED_LEADERBOARD[0]
-): Promise<GameRoom> {
-  const roomId = `room_bot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const bot = botSeed || SEED_LEADERBOARD.find((b) => b.countryCode !== user.countryCode) || SEED_LEADERBOARD[0];
+// -------------------------------------------------------------
+// PRIVATE DUEL ROOMS (Play directly with friends - 100% Real People)
+// -------------------------------------------------------------
 
-  const questions = preferredCategory === 'mixed'
-    ? getRandomQuestions(5)
-    : getQuestionsByCategory(preferredCategory, 5);
+function generateRoomCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+export async function createPrivateDuelRoom(
+  user: UserProfile,
+  preferredCategory: GameCategory | 'mixed' = 'mixed'
+): Promise<{ room: GameRoom; roomCode: string }> {
+  const roomCode = generateRoomCode();
+  const roomId = `room_code_${roomCode}`;
+
+  const questions =
+    preferredCategory === 'mixed'
+      ? getRandomQuestions(5)
+      : getQuestionsByCategory(preferredCategory, 5);
 
   const roomData: GameRoom = {
     id: roomId,
@@ -187,34 +213,85 @@ export async function createBotGameRoom(
     hostScore: 0,
     hostReady: true,
 
-    guestId: bot.uid,
-    guestUsername: bot.username,
-    guestCountryCode: bot.countryCode,
-    guestCountryFlag: bot.countryFlag,
-    guestAvatar: bot.avatar,
+    guestId: '',
+    guestUsername: 'Waiting for friend...',
+    guestCountryCode: '??',
+    guestCountryFlag: '🌐',
+    guestAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80',
     guestScore: 0,
-    guestReady: true,
+    guestReady: false,
 
     gameMode: preferredCategory,
-    status: 'starting',
+    status: 'waiting',
     currentRound: 1,
     totalRounds: questions.length,
     questionIds: questions.map((q) => q.id),
     questions,
     currentQuestion: questions[0],
-    roundStartedAt: Date.now() + 2500,
-    isBotOpponent: true,
+    roundStartedAt: 0,
+    isBotOpponent: false, // NO BOTS
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
 
-  if (auth.currentUser && !user.uid.startsWith('guest_')) {
-    try {
-      await setDoc(doc(db, 'gameRooms', roomId), roomData);
-    } catch (error) {
-      console.warn(`Could not sync bot room to Firestore (${roomId}):`, error);
-    }
+  await setDoc(doc(db, 'gameRooms', roomId), roomData);
+  return { room: roomData, roomCode };
+}
+
+export async function joinPrivateDuelRoom(
+  roomCodeInput: string,
+  user: UserProfile
+): Promise<GameRoom> {
+  const cleanCode = roomCodeInput.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const roomId = `room_code_${cleanCode}`;
+
+  const roomDoc = await getDoc(doc(db, 'gameRooms', roomId));
+  if (!roomDoc.exists()) {
+    throw new Error(`Room code "${cleanCode}" not found. Please double-check with your friend.`);
   }
 
-  return roomData;
+  const currentRoom = roomDoc.data() as GameRoom;
+  if (currentRoom.status === 'finished') {
+    throw new Error('This game match has already finished.');
+  }
+
+  if (currentRoom.hostId === user.uid) {
+    throw new Error("You are the host of this room. Waiting for another real player to join!");
+  }
+
+  // Join as guest
+  const updates: Partial<GameRoom> = {
+    guestId: user.uid,
+    guestUsername: user.username,
+    guestCountryCode: user.countryCode,
+    guestCountryFlag: user.countryFlag,
+    guestAvatar: user.avatar,
+    guestReady: true,
+    status: 'starting',
+    roundStartedAt: Date.now() + 3000,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await updateDoc(doc(db, 'gameRooms', roomId), updates);
+  return { ...currentRoom, ...updates };
+}
+
+export function listenToPrivateRoomHost(
+  roomId: string,
+  onGuestJoined: (room: GameRoom) => void
+) {
+  return onSnapshot(
+    doc(db, 'gameRooms', roomId),
+    (snap) => {
+      if (snap.exists()) {
+        const room = snap.data() as GameRoom;
+        if (room.guestId && room.status === 'starting') {
+          onGuestJoined(room);
+        }
+      }
+    },
+    (err) => {
+      console.warn('Error listening to private room:', err);
+    }
+  );
 }

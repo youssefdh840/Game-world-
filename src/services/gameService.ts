@@ -1,5 +1,6 @@
 import {
   doc,
+  getDoc,
   updateDoc,
   onSnapshot,
   collection,
@@ -11,12 +12,26 @@ import {
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { GameRoom, ChatMessage, ReportItem } from '../types/game';
 
+export async function getGameRoom(roomId: string): Promise<GameRoom | null> {
+  const path = `gameRooms/${roomId}`;
+  try {
+    const snap = await getDoc(doc(db, 'gameRooms', roomId));
+    if (snap.exists()) {
+      return snap.data() as GameRoom;
+    }
+    return null;
+  } catch (error) {
+    console.warn(`Could not fetch game room (${roomId}):`, error);
+    return null;
+  }
+}
+
 export function subscribeToGameRoom(
   roomId: string,
   onUpdate: (room: GameRoom) => void,
   onError?: (err: unknown) => void
 ) {
-  if (roomId.startsWith('room_bot_') || !auth.currentUser) {
+  if (roomId.startsWith('room_bot_')) {
     return () => {};
   }
   const path = `gameRooms/${roomId}`;
@@ -42,7 +57,7 @@ export async function submitPlayerAnswer(
   isCorrect: boolean,
   room: GameRoom
 ) {
-  if (roomId.startsWith('room_bot_') || !auth.currentUser) {
+  if (roomId.startsWith('room_bot_')) {
     return;
   }
   const path = `gameRooms/${roomId}`;
@@ -75,7 +90,7 @@ export async function advanceToNextRoundOrFinish(
   roomId: string,
   room: GameRoom
 ) {
-  if (roomId.startsWith('room_bot_') || !auth.currentUser) {
+  if (roomId.startsWith('room_bot_')) {
     return;
   }
   const path = `gameRooms/${roomId}`;

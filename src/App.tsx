@@ -117,6 +117,7 @@ function AppContent() {
         soundEnabled={soundEnabled}
         setSoundEnabled={setSoundEnabled}
         onOpenLeaderboard={() => setCurrentTab('leaderboard')}
+        onOpenAuth={() => setIsAuthOpen(true)}
       />
 
       {/* Main Content Area */}

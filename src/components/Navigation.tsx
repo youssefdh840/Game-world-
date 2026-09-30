@@ -11,6 +11,7 @@ import {
   VolumeX,
   Shield,
   Bell,
+  LogIn,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { sounds } from '../services/soundEffects';
@@ -30,14 +31,17 @@ export const TopHeader: React.FC<{
   soundEnabled: boolean;
   setSoundEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   onOpenLeaderboard: () => void;
+  onOpenAuth: () => void;
 }> = ({
   onOpenDailyChallenge,
   onOpenAdmin,
   soundEnabled,
   setSoundEnabled,
   onOpenLeaderboard,
+  onOpenAuth,
 }) => {
-  const { userProfile } = useAuth();
+  const { userProfile, firebaseUser } = useAuth();
+  const isGuest = !firebaseUser || firebaseUser.isAnonymous;
 
   const handleToggleSound = () => {
     const next = sounds.toggleSound();
@@ -68,7 +72,34 @@ export const TopHeader: React.FC<{
         </div>
 
         {/* Status Indicators & Quick Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          {/* Prominent Login / Account Button */}
+          {isGuest ? (
+            <button
+              onClick={() => {
+                sounds.playPop();
+                onOpenAuth();
+              }}
+              title="Log In / Sign Up"
+              className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-black px-2.5 py-1 rounded-xl text-xs shadow-md shadow-rose-500/20 active:scale-95 transition-all cursor-pointer"
+            >
+              <LogIn className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Log In</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                sounds.playPop();
+                onOpenAuth();
+              }}
+              title={`Logged in as ${firebaseUser?.email || userProfile?.username}`}
+              className="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 px-2 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="truncate max-w-[70px]">{userProfile?.username || 'Account'}</span>
+            </button>
+          )}
+
           {/* Daily Streak */}
           <button
             onClick={() => {
@@ -76,7 +107,7 @@ export const TopHeader: React.FC<{
               onOpenDailyChallenge();
             }}
             title="Daily Challenge Streak"
-            className="flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 px-2 py-1 rounded-full text-xs font-bold transition-all active:scale-95"
+            className="flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 px-2 py-1 rounded-full text-xs font-bold transition-all active:scale-95 cursor-pointer"
           >
             <Flame className="w-3.5 h-3.5 fill-amber-400 text-amber-400 animate-pulse" />
             <span>{userProfile?.dailyStreak || 1}</span>
@@ -89,7 +120,7 @@ export const TopHeader: React.FC<{
               onOpenLeaderboard();
             }}
             title="Coins & Leaderboard"
-            className="flex items-center gap-1 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 px-2 py-1 rounded-full text-xs font-bold transition-all active:scale-95"
+            className="flex items-center gap-1 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 px-2 py-1 rounded-full text-xs font-bold transition-all active:scale-95 cursor-pointer"
           >
             <Coins className="w-3.5 h-3.5 text-yellow-400" />
             <span>{userProfile?.coins || 100}</span>
@@ -99,7 +130,7 @@ export const TopHeader: React.FC<{
           <button
             onClick={handleToggleSound}
             title={soundEnabled ? 'Mute Sounds' : 'Unmute Sounds'}
-            className="p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+            className="p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
           >
             {soundEnabled ? (
               <Volume2 className="w-4 h-4 text-emerald-400" />
@@ -116,7 +147,7 @@ export const TopHeader: React.FC<{
                 onOpenAdmin();
               }}
               title="Admin Dashboard"
-              className="p-1.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 hover:bg-rose-500/30 transition-colors"
+              className="p-1.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 hover:bg-rose-500/30 transition-colors cursor-pointer"
             >
               <Shield className="w-4 h-4" />
             </button>
