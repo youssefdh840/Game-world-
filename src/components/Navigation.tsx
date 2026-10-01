@@ -198,7 +198,7 @@ export const BottomNavigation: React.FC<NavigationProps> = ({
                 key={tab.id}
                 onClick={handleTabClick}
                 type="button"
-                className="relative -top-4 flex flex-col items-center group focus:outline-none cursor-pointer touch-manipulation select-none"
+                className="relative -top-4 flex flex-col items-center group focus:outline-none cursor-pointer select-none"
               >
                 <div
                   className={`w-14 h-14 rounded-full flex items-center justify-center shadow-xl transition-all duration-150 active:scale-95 will-change-transform ${
@@ -225,7 +225,7 @@ export const BottomNavigation: React.FC<NavigationProps> = ({
               key={tab.id}
               onClick={handleTabClick}
               type="button"
-              className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all duration-150 active:scale-95 cursor-pointer touch-manipulation select-none ${
+              className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all duration-150 active:scale-95 cursor-pointer select-none ${
                 isActive ? 'text-indigo-400 font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
