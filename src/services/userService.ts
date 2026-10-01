@@ -156,7 +156,7 @@ export async function updateUserProfile(uid: string, updates: Partial<UserProfil
   if (uid.startsWith('guest_') || !auth.currentUser) return;
   const path = `users/${uid}`;
   try {
-    await updateDoc(doc(db, 'users', uid), updates);
+    await setDoc(doc(db, 'users', uid), updates, { merge: true });
   } catch (error) {
     console.warn(`Could not update user profile in Firestore:`, error);
   }

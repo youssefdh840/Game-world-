@@ -16,6 +16,7 @@ import {
   getUserProfile,
   createUserProfile,
   subscribeToUserProfile,
+  updateUserProfile,
 } from '../services/userService';
 import { COUNTRIES } from '../services/countryData';
 
@@ -30,6 +31,7 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -306,6 +308,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateProfile = async (updates: Partial<UserProfile>) => {
+    // 1. Immediately update React state so UI reflects changes instantly
+    setUserProfile((prev) => {
+      if (!prev) return null;
+      const updated = { ...prev, ...updates };
+      try {
+        localStorage.setItem('wc_cached_profile', JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+
+    // 2. Persist to Firestore
+    const targetUid = firebaseUser?.uid || userProfile?.uid;
+    if (targetUid) {
+      await updateUserProfile(targetUid, updates);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -319,6 +341,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resetPassword,
         logout,
         refreshProfile,
+        updateProfile,
       }}
     >
       {children}

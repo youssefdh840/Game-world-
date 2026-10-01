@@ -8,6 +8,7 @@ import {
   query,
   orderBy,
   limit,
+  increment,
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { GameRoom, ChatMessage, ReportItem } from '../types/game';
@@ -66,16 +67,20 @@ export async function submitPlayerAnswer(
     ? Math.max(50, 100 + Math.floor((10000 - Math.min(timeTakenMs, 10000)) / 100))
     : 0;
 
-  const updates: Partial<GameRoom> = {};
+  const updates: Record<string, unknown> = {};
 
   if (isHost) {
     updates.hostAnswer = answer;
     updates.hostAnswerTime = timeTakenMs;
-    updates.hostScore = (room.hostScore || 0) + pointsEarned;
+    if (pointsEarned > 0) {
+      updates.hostScore = increment(pointsEarned);
+    }
   } else {
     updates.guestAnswer = answer;
     updates.guestAnswerTime = timeTakenMs;
-    updates.guestScore = (room.guestScore || 0) + pointsEarned;
+    if (pointsEarned > 0) {
+      updates.guestScore = increment(pointsEarned);
+    }
   }
   updates.updatedAt = new Date().toISOString();
 
@@ -94,46 +99,54 @@ export async function advanceToNextRoundOrFinish(
     return;
   }
   const path = `gameRooms/${roomId}`;
-  const nextRound = room.currentRound + 1;
-
-  if (nextRound > room.totalRounds) {
-    // Game completed! Determine winner
-    let winnerId: string | 'tie' = 'tie';
-    if (room.hostScore > room.guestScore) {
-      winnerId = room.hostId;
-    } else if (room.guestScore > room.hostScore) {
-      winnerId = room.guestId;
-    }
-
-    const updates: Partial<GameRoom> = {
-      status: 'finished',
-      winnerId,
-      updatedAt: new Date().toISOString(),
-    };
-    try {
-      await updateDoc(doc(db, 'gameRooms', roomId), updates);
-    } catch (error) {
-      console.warn(`Could not finish game (${roomId}):`, error);
-    }
-    return;
-  }
-
-  // Move to next round
-  const nextQuestion = room.questions ? room.questions[nextRound - 1] : undefined;
-  const updates: Partial<GameRoom> = {
-    currentRound: nextRound,
-    currentQuestion: nextQuestion,
-    status: 'playing',
-    hostAnswer: null,
-    hostAnswerTime: null,
-    guestAnswer: null,
-    guestAnswerTime: null,
-    roundStartedAt: Date.now(),
-    updatedAt: new Date().toISOString(),
-  };
+  const roomDocRef = doc(db, 'gameRooms', roomId);
 
   try {
-    await updateDoc(doc(db, 'gameRooms', roomId), updates);
+    // Check current state from server to prevent double-advancing or race conditions
+    const snap = await getDoc(roomDocRef);
+    if (!snap.exists()) return;
+    const currentData = snap.data() as GameRoom;
+
+    // If another client already moved to the next round or finished, abort
+    if (currentData.currentRound > room.currentRound || currentData.status === 'finished') {
+      return;
+    }
+
+    const nextRound = currentData.currentRound + 1;
+
+    if (nextRound > currentData.totalRounds) {
+      // Game completed! Determine winner from latest scores
+      let winnerId: string | 'tie' = 'tie';
+      if ((currentData.hostScore || 0) > (currentData.guestScore || 0)) {
+        winnerId = currentData.hostId;
+      } else if ((currentData.guestScore || 0) > (currentData.hostScore || 0)) {
+        winnerId = currentData.guestId;
+      }
+
+      const updates: Partial<GameRoom> = {
+        status: 'finished',
+        winnerId,
+        updatedAt: new Date().toISOString(),
+      };
+      await updateDoc(roomDocRef, updates);
+      return;
+    }
+
+    // Move to next round
+    const nextQuestion = currentData.questions ? currentData.questions[nextRound - 1] : undefined;
+    const updates: Partial<GameRoom> = {
+      currentRound: nextRound,
+      currentQuestion: nextQuestion,
+      status: 'playing',
+      hostAnswer: null,
+      hostAnswerTime: null,
+      guestAnswer: null,
+      guestAnswerTime: null,
+      roundStartedAt: Date.now(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await updateDoc(roomDocRef, updates);
   } catch (error) {
     console.warn(`Could not advance round (${roomId}):`, error);
   }

@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types/game';
 import { useAuth } from '../context/AuthContext';
 import { COUNTRIES } from '../services/countryData';
 import { BADGES } from '../services/badgesData';
-import { updateUserProfile, calculateLevel } from '../services/userService';
+import { calculateLevel } from '../services/userService';
 import { sounds } from '../services/soundEffects';
 import { FirebaseConfigModal } from '../components/FirebaseConfigModal';
 import {
@@ -22,6 +22,7 @@ import {
   VolumeX,
   KeyRound,
   LogIn,
+  Loader2,
 } from 'lucide-react';
 
 interface ProfileScreenProps {
@@ -37,7 +38,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   soundEnabled,
   setSoundEnabled,
 }) => {
-  const { logout, firebaseUser } = useAuth();
+  const { logout, firebaseUser, updateProfile } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [username, setUsername] = useState(user.username);
   const [countryCode, setCountryCode] = useState(user.countryCode);
@@ -46,6 +47,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isFirebaseConfigOpen, setIsFirebaseConfigOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setUsername(user.username);
+      setCountryCode(user.countryCode);
+      setBio(user.bio || '');
+      setLanguage(user.preferredLanguage || 'English');
+    }
+  }, [user, isEditing]);
 
   const levelInfo = calculateLevel(user.xp);
   const winRate =
@@ -63,7 +73,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     const selectedCountry = COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
 
     try {
-      await updateUserProfile(user.uid, {
+      await updateProfile({
         username: username.trim(),
         countryCode: selectedCountry.code,
         countryName: selectedCountry.name,
@@ -74,7 +84,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       sounds.playCorrect();
       setIsEditing(false);
       setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 2500);
+      setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err) {
       console.error('Error saving profile:', err);
       sounds.playWrong();
@@ -216,10 +226,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <button
             type="submit"
             disabled={saving}
-            className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-98 transition-all cursor-pointer"
+            className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-98 transition-all cursor-pointer disabled:opacity-50"
           >
-            <Save className="w-3.5 h-3.5" />
-            <span>{saving ? 'Saving...' : 'Save Changes'}</span>
+            {saving ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Saving Changes...</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-3.5 h-3.5" />
+                <span>Save Changes</span>
+              </>
+            )}
           </button>
         </form>
       )}
