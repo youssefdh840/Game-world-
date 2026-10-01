@@ -76,6 +76,11 @@ function AppContent() {
     }
   }, [userProfile?.uid, userProfile?.countryCode, userProfile?.discoveredCountries?.length]);
 
+  // Smooth scroll to top on tab switch
+  React.useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [currentTab]);
+
   if (loading) {
     return (
       <div className="min-h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-4 text-slate-100">

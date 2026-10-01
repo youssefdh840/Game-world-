@@ -177,23 +177,31 @@ export const BottomNavigation: React.FC<NavigationProps> = ({
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 pb-safe">
-      <div className="max-w-md mx-auto flex items-center justify-around px-2 py-1.5">
+      <div className="max-w-md mx-auto flex items-center justify-around px-2 py-1.5 select-none">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = currentTab === tab.id;
+
+          const handleTabClick = () => {
+            setCurrentTab(tab.id);
+            // Non-blocking sound feedback
+            try {
+              sounds.playPop();
+            } catch {
+              // ignore
+            }
+          };
 
           if (tab.highlight) {
             return (
               <button
                 key={tab.id}
-                onClick={() => {
-                  sounds.playPop();
-                  setCurrentTab(tab.id);
-                }}
-                className="relative -top-4 flex flex-col items-center group focus:outline-none"
+                onClick={handleTabClick}
+                type="button"
+                className="relative -top-4 flex flex-col items-center group focus:outline-none cursor-pointer touch-manipulation select-none"
               >
                 <div
-                  className={`w-14 h-14 rounded-full flex items-center justify-center shadow-xl transition-transform active:scale-95 ${
+                  className={`w-14 h-14 rounded-full flex items-center justify-center shadow-xl transition-all duration-150 active:scale-95 will-change-transform ${
                     isActive
                       ? 'bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 ring-4 ring-rose-500/30 shadow-rose-500/40 scale-105'
                       : 'bg-gradient-to-tr from-indigo-600 to-rose-600 shadow-indigo-600/30 hover:scale-105'
@@ -202,7 +210,7 @@ export const BottomNavigation: React.FC<NavigationProps> = ({
                   <Icon className="w-7 h-7 text-white" />
                 </div>
                 <span
-                  className={`text-[10px] font-bold mt-1 ${
+                  className={`text-[10px] font-bold mt-1 transition-colors ${
                     isActive ? 'text-rose-400' : 'text-slate-400'
                   }`}
                 >
@@ -215,12 +223,10 @@ export const BottomNavigation: React.FC<NavigationProps> = ({
           return (
             <button
               key={tab.id}
-              onClick={() => {
-                sounds.playPop();
-                setCurrentTab(tab.id);
-              }}
-              className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all active:scale-95 ${
-                isActive ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
+              onClick={handleTabClick}
+              type="button"
+              className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all duration-150 active:scale-95 cursor-pointer touch-manipulation select-none ${
+                isActive ? 'text-indigo-400 font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <div className="relative">
