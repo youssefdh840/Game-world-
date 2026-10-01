@@ -91,10 +91,18 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       setMessages(msgs);
     });
 
+    // Ensure room status transitions to 'playing' if starting or waiting
+    if (room.status === 'starting' || room.status === 'waiting') {
+      setRoom((prev) => ({ ...prev, status: 'playing' }));
+    }
+
     return () => {
       unsubRoom();
       unsubMessages();
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
       if (botAnswerTimerRef.current) clearTimeout(botAnswerTimerRef.current);
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
@@ -185,15 +193,14 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   // Handle current round change / start timer
   useEffect(() => {
     if (room.status === 'finished') {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
       if (botAnswerTimerRef.current) clearTimeout(botAnswerTimerRef.current);
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
       handleMatchFinished();
-      return;
-    }
-
-    if (room.status !== 'playing') {
       return;
     }
 
@@ -203,45 +210,39 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     setShowExplanation(false);
     hasAdvancedThisRoundRef.current = null;
 
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
     if (botAnswerTimerRef.current) clearTimeout(botAnswerTimerRef.current);
     if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
 
-    // Synchronize round timer with roundStartedAt
-    const validStartedAt =
-      room.roundStartedAt && Math.abs(Date.now() - room.roundStartedAt) < 15000
-        ? room.roundStartedAt
-        : Date.now();
-    roundStartTimeRef.current = validStartedAt;
-
-    const initialRemaining = Math.max(0, 10 - Math.floor((Date.now() - validStartedAt) / 1000));
-    setTimeLeft(initialRemaining);
+    // Initialize 10s countdown
+    setTimeLeft(10);
+    roundStartTimeRef.current = Date.now();
 
     // 1-second countdown interval
     timerRef.current = setInterval(() => {
-      const now = Date.now();
-      const elapsed = Math.floor((now - roundStartTimeRef.current) / 1000);
-      const remaining = Math.max(0, 10 - elapsed);
-
-      setTimeLeft(remaining);
-
-      if (remaining <= 3 && remaining > 0) {
-        sounds.playCountdown();
-      }
-
-      if (remaining <= 0) {
-        if (timerRef.current) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          handleTimeExpired();
+          return 0;
         }
-        handleTimeExpired();
-      }
+        if (prev <= 4) {
+          sounds.playCountdown();
+        }
+        return prev - 1;
+      });
     }, 1000);
 
     // Bot opponent answering simulation
     if (room.isBotOpponent && !room.guestAnswer) {
-      const botDelay = 1600 + Math.random() * 1800;
+      const botDelay = 1800 + Math.random() * 1600;
       botAnswerTimerRef.current = setTimeout(() => {
         const curQ =
           roomRef.current.currentQuestion ||
@@ -268,14 +269,17 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     }
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       if (botAnswerTimerRef.current) clearTimeout(botAnswerTimerRef.current);
     };
-  }, [room.currentRound, room.status]);
+  }, [room.currentRound, room.status === 'finished']);
 
   // Monitor when both players have submitted answers
   useEffect(() => {
-    if (room.status !== 'playing') return;
+    if (room.status === 'finished') return;
 
     const hostDone = Boolean(room.hostAnswer);
     const guestDone = Boolean(room.guestAnswer);

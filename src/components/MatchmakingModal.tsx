@@ -10,6 +10,8 @@ import {
 } from '../services/matchmakingService';
 import { getGameRoom } from '../services/gameService';
 import { sounds } from '../services/soundEffects';
+import { SEED_LEADERBOARD } from '../services/userService';
+import { getRandomQuestions, getQuestionsByCategory } from '../services/questionData';
 import {
   Globe2,
   X,
@@ -21,6 +23,7 @@ import {
   Check,
   Loader2,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 
 interface MatchmakingModalProps {
@@ -95,6 +98,54 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     }, 1000);
   };
 
+  // Helper to start bot match if no player is in queue
+  const startBotMatch = () => {
+    cleanUpListeners();
+    const candidateBots = SEED_LEADERBOARD.filter((b) => b.countryCode !== user.countryCode);
+    const botOpponent =
+      candidateBots.length > 0
+        ? candidateBots[Math.floor(Math.random() * candidateBots.length)]
+        : SEED_LEADERBOARD[0];
+
+    const questions =
+      category === 'mixed'
+        ? getRandomQuestions(5)
+        : getQuestionsByCategory(category, 5);
+
+    const botRoom: GameRoom = {
+      id: `room_bot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      hostId: user.uid,
+      hostUsername: user.username,
+      hostCountryCode: user.countryCode,
+      hostCountryFlag: user.countryFlag,
+      hostAvatar: user.avatar,
+      hostScore: 0,
+      hostReady: true,
+
+      guestId: botOpponent.uid,
+      guestUsername: botOpponent.username,
+      guestCountryCode: botOpponent.countryCode,
+      guestCountryFlag: botOpponent.countryFlag,
+      guestAvatar: botOpponent.avatar,
+      guestScore: 0,
+      guestReady: true,
+
+      gameMode: category,
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: questions.length,
+      questionIds: questions.map((q) => q.id),
+      questions,
+      currentQuestion: questions[0],
+      roundStartedAt: Date.now(),
+      isBotOpponent: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    commenceMatch(botRoom, botOpponent);
+  };
+
   // 1. Worldwide Queue Search (Real Players Only - Zero AI)
   useEffect(() => {
     if (!isOpen || tab !== 'queue') return;
@@ -106,7 +157,14 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     setElapsedSeconds(0);
 
     const timer = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
+      setElapsedSeconds((prev) => {
+        const next = prev + 1;
+        // Auto-match after 7 seconds if no other real player is in queue
+        if (next >= 7 && !matchedOpponent) {
+          startBotMatch();
+        }
+        return next;
+      });
     }, 1000);
 
     let isCancelled = false;
@@ -375,9 +433,20 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
                 : 'Connecting to synchronized live duel session!'}
             </p>
 
-            {/* Quick action: Cancel or switch to code */}
+            {/* Quick action: Instant Play or Cancel or switch to code */}
             {!matchedOpponent && (
-              <div className="mt-6 space-y-2">
+              <div className="mt-6 space-y-2.5">
+                <button
+                  onClick={() => {
+                    sounds.playPop();
+                    startBotMatch();
+                  }}
+                  className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-rose-600/30 flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 transition-all"
+                >
+                  <Zap className="w-4 h-4 fill-current text-yellow-300" />
+                  <span>Play Instantly with World Challenger</span>
+                </button>
+
                 <button
                   onClick={() => {
                     sounds.playPop();
