@@ -10,6 +10,7 @@ import {
   reportUser,
   fetchDynamicGameQuestions,
   recordQuestionsAnsweredInSession,
+  forfeitGame,
 } from '../services/gameService';
 import { awardGameResults } from '../services/userService';
 import { sounds } from '../services/soundEffects';
@@ -31,6 +32,7 @@ import {
   Music,
   MapPin,
   Flame,
+  LogOut,
 } from 'lucide-react';
 
 interface GameRoomScreenProps {
@@ -58,6 +60,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const [reportModalOpen, setReportModalOpen] = useState<boolean>(false);
   const [reportReason, setReportReason] = useState<string>('Unsportsmanlike conduct');
   const [reportedSuccess, setReportedSuccess] = useState<boolean>(false);
+  const [forfeitModalOpen, setForfeitModalOpen] = useState<boolean>(false);
 
   // End of match awards
   const [awardedResults, setAwardedResults] = useState<{
@@ -276,24 +279,28 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     const now = Date.now();
     let startTime = room.roundStartTime || room.roundStartedAt || 0;
 
-    // If timestamp is missing, in future (> now + 500ms), or stale (> 10s old), initialize to now
-    if (!startTime || startTime > now + 500 || now - startTime >= 10000) {
-      startTime = now;
-      roundStartTimeRef.current = now;
-      setRoom((prev) => ({
-        ...prev,
-        roundStartTime: now,
-        roundStartedAt: now,
-      }));
-      if (isHostRef.current || room.isBotOpponent) {
+    // Check if timestamp is missing or stale (> 15s old or > 4s in future)
+    const isInvalid = !startTime || (now - startTime >= 15000) || (startTime > now + 4000);
+
+    if (isInvalid) {
+      if (isHostRef.current) {
+        startTime = now;
+        roundStartTimeRef.current = now;
+        setRoom((prev) => ({
+          ...prev,
+          roundStartTime: now,
+          roundStartedAt: now,
+        }));
         syncRoomRoundStartTime(room.id, now);
+      } else {
+        roundStartTimeRef.current = now;
       }
     } else {
       roundStartTimeRef.current = startTime;
     }
 
-    // Initial countdown calculation
-    const elapsedInitial = Math.floor((Date.now() - roundStartTimeRef.current) / 1000);
+    // Initial countdown calculation (clamped so clock skew never produces negative or >10 remaining)
+    const elapsedInitial = Math.max(0, Math.floor((Date.now() - roundStartTimeRef.current) / 1000));
     const initialRemaining = Math.max(0, 10 - elapsedInitial);
     setTimeLeft(initialRemaining);
 
@@ -310,7 +317,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         return;
       }
 
-      const elapsed = Math.floor((Date.now() - roundStartTimeRef.current) / 1000);
+      const elapsed = Math.max(0, Math.floor((Date.now() - roundStartTimeRef.current) / 1000));
       const remaining = Math.max(0, 10 - elapsed);
       setTimeLeft(remaining);
 
@@ -432,9 +439,10 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       : 0;
 
     // Optimistically update local room
+    const isHostPlayer = isHostRef.current;
     setRoom((prev) => {
       const copy = { ...prev };
-      if (isHost) {
+      if (isHostPlayer) {
         copy.hostAnswer = option;
         copy.hostAnswerTime = timeTaken;
         copy.hostScore = (copy.hostScore || 0) + pointsEarned;
@@ -446,7 +454,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       return copy;
     });
 
-    submitPlayerAnswer(room.id, user.uid, option, timeTaken, isCorrect, room);
+    submitPlayerAnswer(room.id, user.uid, option, timeTaken, isCorrect, roomRef.current);
 
     // If opponent is bot and hasn't answered yet, reply promptly
     if (room.isBotOpponent && !room.guestAnswer) {
@@ -602,10 +610,22 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
             MATCH CONCLUSION
           </span>
           <h2 className="text-3xl font-black text-white mt-1">
-            {isWinner ? 'VICTORY!' : isTie ? 'WELL PLAYED!' : 'DEFEAT'}
+            {room.forfeitBy
+              ? room.forfeitBy !== user.uid
+                ? 'VICTORY BY FORFEIT!'
+                : 'FORFEITED'
+              : isWinner
+              ? 'VICTORY!'
+              : isTie
+              ? 'WELL PLAYED!'
+              : 'DEFEAT'}
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            {isWinner
+            {room.forfeitBy
+              ? room.forfeitBy !== user.uid
+                ? `${opponentName} left the match. Victory has been awarded to you!`
+                : 'You surrendered the duel.'
+              : isWinner
               ? `You triumphed over ${opponentName} in a cultural showdown!`
               : isTie
               ? 'An evenly matched clash of world explorers!'
@@ -725,13 +745,25 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           </div>
 
           {/* Round & Timer Indicator */}
-          <div className="text-center px-2">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
-              ROUND {room.currentRound} / {room.totalRounds}
-            </span>
-            <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-800 border border-slate-700 text-sm font-mono font-black text-amber-400">
-              {timeLeft}s
+          <div className="text-center px-1 flex items-center gap-1.5">
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                ROUND {room.currentRound} / {room.totalRounds}
+              </span>
+              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-800 border border-slate-700 text-sm font-mono font-black text-amber-400">
+                {timeLeft}s
+              </div>
             </div>
+            <button
+              onClick={() => {
+                sounds.playPop();
+                setForfeitModalOpen(true);
+              }}
+              className="p-1.5 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Leave / Forfeit Match"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           {/* Player B (Opponent) */}
@@ -1022,6 +1054,39 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* Forfeit Confirmation Modal */}
+      {forfeitModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-xs w-full text-center space-y-3 shadow-2xl">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto text-xl font-bold">
+              <LogOut className="w-6 h-6" />
+            </div>
+            <h4 className="text-base font-extrabold text-white">Leave Match?</h4>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              If you leave now, you will forfeit this duel and victory will be awarded to {opponentName}.
+            </p>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setForfeitModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Resume
+              </button>
+              <button
+                onClick={async () => {
+                  sounds.playWrong();
+                  setForfeitModalOpen(false);
+                  await forfeitGame(room.id, user.uid, roomRef.current);
+                  onExitRoom();
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-600/30 transition-colors cursor-pointer"
+              >
+                Forfeit
+              </button>
+            </div>
           </div>
         </div>
       )}

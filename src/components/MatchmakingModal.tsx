@@ -2,13 +2,13 @@ import React, { useEffect, useState, useRef } from 'react';
 import { UserProfile, GameCategory, GameRoom } from '../types/game';
 import {
   joinMatchmakingQueue,
-  listenToMatchmakingTicket,
+  listenToMatchmakingRoom,
   leaveMatchmakingQueue,
   createPrivateDuelRoom,
   joinPrivateDuelRoom,
   listenToPrivateRoomHost,
 } from '../services/matchmakingService';
-import { getGameRoom } from '../services/gameService';
+import { getGameRoom, syncRoomRoundStartTime } from '../services/gameService';
 import { sounds } from '../services/soundEffects';
 import {
   Globe2,
@@ -69,6 +69,10 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
       leaveMatchmakingQueue(activeTicketIdRef.current);
       activeTicketIdRef.current = '';
     }
+    if (activePrivateRoomIdRef.current) {
+      leaveMatchmakingQueue(activePrivateRoomIdRef.current);
+      activePrivateRoomIdRef.current = '';
+    }
     if (cdIntervalRef.current) {
       clearInterval(cdIntervalRef.current);
       cdIntervalRef.current = null;
@@ -96,6 +100,13 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         const now = Date.now();
         room.roundStartTime = now;
         room.roundStartedAt = now;
+        room.status = 'playing';
+
+        // Authoritative Host activates match in Firestore
+        if (room.hostId === user.uid) {
+          syncRoomRoundStartTime(room.id, now);
+        }
+
         onMatchFound(room);
       }
     }, 1000);
@@ -119,15 +130,15 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
 
     // Join the real Firestore queue
     joinMatchmakingQueue(user, category, targetCountryCode)
-      .then(({ ticketId, matchedRoom }) => {
+      .then(({ roomId, matchedRoom }) => {
         if (isCancelled) {
-          leaveMatchmakingQueue(ticketId);
+          leaveMatchmakingQueue(roomId);
           return;
         }
 
-        activeTicketIdRef.current = ticketId;
+        activeTicketIdRef.current = roomId;
 
-        // If another real player was already waiting, we matched them immediately!
+        // If another real player was already waiting, we joined their waiting room!
         if (matchedRoom) {
           const opp: Partial<UserProfile> = {
             uid: matchedRoom.hostId,
@@ -135,32 +146,24 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
             countryCode: matchedRoom.hostCountryCode,
             countryFlag: matchedRoom.hostCountryFlag,
             avatar: matchedRoom.hostAvatar,
-            countryName: 'Challenger',
+            countryName: 'Host',
           };
           commenceMatch(matchedRoom, opp);
           return;
         }
 
-        // Otherwise, wait for another real player to match our ticket
-        unsubRef.current = listenToMatchmakingTicket(ticketId, async (roomId) => {
+        // Otherwise, wait for another real player to join our room
+        unsubRef.current = listenToMatchmakingRoom(roomId, (room) => {
           if (isCancelled) return;
-          try {
-            const room = await getGameRoom(roomId);
-            if (room) {
-              const isUserHost = room.hostId === user.uid;
-              const opp: Partial<UserProfile> = {
-                uid: isUserHost ? room.guestId : room.hostId,
-                username: isUserHost ? room.guestUsername : room.hostUsername,
-                countryCode: isUserHost ? room.guestCountryCode : room.hostCountryCode,
-                countryFlag: isUserHost ? room.guestCountryFlag : room.hostCountryFlag,
-                avatar: isUserHost ? room.guestAvatar : room.hostAvatar,
-                countryName: 'Challenger',
-              };
-              commenceMatch(room, opp);
-            }
-          } catch (err) {
-            console.error('Error fetching matched room:', err);
-          }
+          const opp: Partial<UserProfile> = {
+            uid: room.guestId,
+            username: room.guestUsername,
+            countryCode: room.guestCountryCode,
+            countryFlag: room.guestCountryFlag,
+            avatar: room.guestAvatar,
+            countryName: 'Guest',
+          };
+          commenceMatch(room, opp);
         });
       })
       .catch((err) => {

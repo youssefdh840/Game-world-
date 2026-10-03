@@ -110,6 +110,8 @@ export interface GameRoom {
   questions?: Question[];
   currentQuestion?: Question;
   winnerId?: string | 'tie' | null;
+  forfeitBy?: string;
+  abandonedBy?: string;
   roundStartedAt?: number;
   roundStartTime?: number;
   isBotOpponent?: boolean;

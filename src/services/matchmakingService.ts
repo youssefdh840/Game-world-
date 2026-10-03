@@ -28,55 +28,44 @@ export interface MatchTicket {
 }
 
 export interface JoinQueueResult {
-  ticketId: string;
-  unsubscribe: () => void;
+  roomId: string;
+  isHost: boolean;
   matchedRoom?: GameRoom;
+  unsubscribe: () => void;
 }
 
-// Joins the worldwide matchmaking queue for REAL PLAYERS ONLY
+// Joins the worldwide matchmaking queue for REAL PLAYERS ONLY via Firestore gameRooms
 export async function joinMatchmakingQueue(
   user: UserProfile,
   preferredCategory: GameCategory | 'mixed' = 'mixed',
   targetCountryCode?: string
 ): Promise<JoinQueueResult> {
-  const ticketId = `ticket_${user.uid}`;
+  const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
 
-  // 1. Check if another real player is already waiting in queue
+  // 1. Check if another real player already has an open waiting room in gameRooms
   try {
     const q = query(
-      collection(db, 'matchmaking'),
+      collection(db, 'gameRooms'),
       where('status', '==', 'waiting')
     );
     const snap = await getDocs(q);
 
-    // Filter out our own ticket and find valid real human opponent
-    const opponents = snap.docs
-      .map((d) => ({ id: d.id, ...(d.data() as MatchTicket) }))
-      .filter((t) => t.userId && t.userId !== user.uid);
-
-    if (opponents.length > 0) {
-      // Pick the first waiting opponent
-      const opponentTicket = opponents[0];
-      const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
-      // Select 5 diverse, non-repeating questions
-      const questions = await fetchDynamicGameQuestions({
-        count: 5,
-        category: preferredCategory,
-        countryCode: targetCountryCode,
-        userLevel: user.level,
+    // Find a valid waiting room created by another real player (not ourselves, not already joined, not expired)
+    const openRooms = snap.docs
+      .map((d) => d.data() as GameRoom)
+      .filter((r) => {
+        if (!r.id || !r.hostId || r.hostId === user.uid) return false;
+        if (r.guestId && r.guestId !== '') return false;
+        const createdMs = new Date(r.createdAt).getTime();
+        return !isNaN(createdMs) && createdMs >= threeMinutesAgo;
       });
 
-      const roomData: GameRoom = {
-        id: roomId,
-        hostId: opponentTicket.userId,
-        hostUsername: opponentTicket.username,
-        hostCountryCode: opponentTicket.countryCode,
-        hostCountryFlag: opponentTicket.countryFlag,
-        hostAvatar: opponentTicket.avatar,
-        hostScore: 0,
-        hostReady: true,
+    if (openRooms.length > 0) {
+      // Pick the first available open waiting room
+      const waitingRoom = openRooms[0];
+      const now = Date.now();
 
+      const updates: Partial<GameRoom> = {
         guestId: user.uid,
         guestUsername: user.username,
         guestCountryCode: user.countryCode,
@@ -84,41 +73,21 @@ export async function joinMatchmakingQueue(
         guestAvatar: user.avatar,
         guestScore: 0,
         guestReady: true,
-
-        gameMode: preferredCategory,
-        targetCountryCode,
         status: 'starting',
-        currentRound: 1,
-        totalRounds: questions.length,
-        questionIds: questions.map((q) => q.id),
-        questions,
-        currentQuestion: questions[0],
-        roundStartedAt: Date.now(),
-        roundStartTime: Date.now(),
-        isBotOpponent: false, // NO BOTS - REAL PEOPLE ONLY
-        createdAt: new Date().toISOString(),
+        roundStartedAt: now,
+        roundStartTime: now,
         updatedAt: new Date().toISOString(),
       };
 
-      // Create live game room in Firestore
-      await setDoc(doc(db, 'gameRooms', roomId), roomData);
+      // Join the room as guest and advance status to 'starting'
+      await updateDoc(doc(db, 'gameRooms', waitingRoom.id), updates);
 
-      // Signal the waiting opponent by updating their ticket
-      await setDoc(
-        doc(db, 'matchmaking', opponentTicket.id),
-        { status: 'matched', matchedRoomId: roomId },
-        { merge: true }
-      );
+      const matchedRoom: GameRoom = { ...waitingRoom, ...updates };
 
-      // Clean up opponent ticket after a short grace period
-      setTimeout(() => {
-        deleteDoc(doc(db, 'matchmaking', opponentTicket.id)).catch(() => {});
-      }, 5000);
-
-      // Return instant match with the created room
       return {
-        ticketId,
-        matchedRoom: roomData,
+        roomId: waitingRoom.id,
+        isHost: false,
+        matchedRoom,
         unsubscribe: () => {},
       };
     }
@@ -126,58 +95,115 @@ export async function joinMatchmakingQueue(
     console.warn('Queue search notice:', err);
   }
 
-  // 2. No opponent currently waiting: post our own ticket
-  const ticketData: MatchTicket = {
-    userId: user.uid,
-    username: user.username,
-    countryCode: user.countryCode,
-    countryFlag: user.countryFlag,
-    avatar: user.avatar,
-    level: user.level,
-    preferredCategory,
+  // 2. No open waiting room: Player 1 creates a new room document in Firestore with status 'waiting'
+  const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+  // Fetch diverse questions for this match
+  const questions = await fetchDynamicGameQuestions({
+    count: 5,
+    category: preferredCategory,
+    countryCode: targetCountryCode,
+    userLevel: user.level,
+  });
+
+  const now = Date.now();
+  const roomData: GameRoom = {
+    id: roomId,
+    hostId: user.uid,
+    hostUsername: user.username,
+    hostCountryCode: user.countryCode,
+    hostCountryFlag: user.countryFlag,
+    hostAvatar: user.avatar,
+    hostScore: 0,
+    hostReady: true,
+
+    guestId: '',
+    guestUsername: '',
+    guestCountryCode: '',
+    guestCountryFlag: '',
+    guestAvatar: '',
+    guestScore: 0,
+    guestReady: false,
+
+    gameMode: preferredCategory,
+    targetCountryCode,
     status: 'waiting',
+    currentRound: 1,
+    totalRounds: questions.length,
+    questionIds: questions.map((q) => q.id),
+    questions,
+    currentQuestion: questions[0],
+    roundStartedAt: now,
+    roundStartTime: now,
+    isBotOpponent: false, // REAL PLAYERS ONLY
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
 
   try {
-    await setDoc(doc(db, 'matchmaking', ticketId), ticketData);
+    await setDoc(doc(db, 'gameRooms', roomId), roomData);
   } catch (error) {
-    console.warn('Could not post matchmaking ticket to Firestore:', error);
+    console.warn('Could not create waiting game room in Firestore:', error);
   }
 
   return {
-    ticketId,
+    roomId,
+    isHost: true,
     unsubscribe: () => {
-      deleteDoc(doc(db, 'matchmaking', ticketId)).catch(() => {});
+      // If Player 1 cancels search, clean up the waiting room
+      deleteDoc(doc(db, 'gameRooms', roomId)).catch(() => {});
     },
   };
 }
 
-// Listens to ticket updates when another real player matches with us
-export function listenToMatchmakingTicket(
-  ticketId: string,
-  onMatched: (roomId: string) => void
+// Listens to room updates when another real player joins our waiting room
+export function listenToMatchmakingRoom(
+  roomId: string,
+  onMatched: (room: GameRoom) => void
 ) {
   return onSnapshot(
-    doc(db, 'matchmaking', ticketId),
+    doc(db, 'gameRooms', roomId),
     (snap) => {
       if (snap.exists()) {
-        const data = snap.data() as MatchTicket;
-        if (data.status === 'matched' && data.matchedRoomId) {
-          onMatched(data.matchedRoomId);
+        const room = snap.data() as GameRoom;
+        if (room.guestId && room.status === 'starting') {
+          onMatched(room);
         }
       }
     },
     (error) => {
-      console.warn(`Matchmaking ticket listen notice (${ticketId}):`, error);
+      console.warn(`Matchmaking room listen notice (${roomId}):`, error);
     }
   );
 }
 
-// Cancel / leave queue
-export async function leaveMatchmakingQueue(ticketId: string) {
+// Alias for backwards compatibility
+export const listenToMatchmakingTicket = (
+  roomId: string,
+  onMatched: (roomId: string) => void
+) => {
+  return onSnapshot(doc(db, 'gameRooms', roomId), (snap) => {
+    if (snap.exists()) {
+      const room = snap.data() as GameRoom;
+      if (room.guestId && room.status === 'starting') {
+        onMatched(room.id);
+      }
+    }
+  });
+};
+
+// Cancel / leave queue and delete waiting room
+export async function leaveMatchmakingQueue(roomId: string) {
+  if (!roomId) return;
   try {
-    await deleteDoc(doc(db, 'matchmaking', ticketId));
+    const roomSnap = await getDoc(doc(db, 'gameRooms', roomId));
+    if (roomSnap.exists()) {
+      const data = roomSnap.data() as GameRoom;
+      // Only delete if still waiting with no guest
+      if (data.status === 'waiting' && (!data.guestId || data.guestId === '')) {
+        await deleteDoc(doc(db, 'gameRooms', roomId));
+      }
+    }
   } catch {
     // Non-fatal
   }

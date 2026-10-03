@@ -180,6 +180,36 @@ export async function syncRoomRoundStartTime(roomId: string, startTime: number) 
   }
 }
 
+export async function forfeitGame(
+  roomId: string,
+  forfeitingUserId: string,
+  currentRoom: GameRoom
+) {
+  if (roomId.startsWith('room_bot_')) return;
+  const isHost = currentRoom.hostId === forfeitingUserId;
+  const winnerId = isHost ? currentRoom.guestId : currentRoom.hostId;
+  try {
+    await updateDoc(doc(db, 'gameRooms', roomId), {
+      status: 'finished',
+      winnerId: winnerId || 'tie',
+      forfeitBy: forfeitingUserId,
+      abandonedBy: forfeitingUserId,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn(`Could not record game forfeit (${roomId}):`, err);
+  }
+}
+
+export async function deleteGameRoom(roomId: string) {
+  if (roomId.startsWith('room_bot_')) return;
+  try {
+    await deleteDoc(doc(db, 'gameRooms', roomId));
+  } catch (err) {
+    console.warn(`Could not delete game room (${roomId}):`, err);
+  }
+}
+
 // In-Game Chat
 export function subscribeToRoomMessages(
   roomId: string,
