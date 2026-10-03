@@ -11,7 +11,20 @@ import {
   increment,
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
-import { GameRoom, ChatMessage, ReportItem } from '../types/game';
+import { GameRoom, ChatMessage, ReportItem, Question } from '../types/game';
+import {
+  fetchDynamicGameQuestions,
+  recordQuestionsAnsweredInSession,
+  clearSessionQuestionHistory,
+  QuestionFilterOptions,
+} from './questionService';
+
+export {
+  fetchDynamicGameQuestions,
+  recordQuestionsAnsweredInSession,
+  clearSessionQuestionHistory,
+  type QuestionFilterOptions,
+};
 
 export async function getGameRoom(roomId: string): Promise<GameRoom | null> {
   const path = `gameRooms/${roomId}`;

@@ -27,6 +27,7 @@ function AppContent() {
   // Modals & Active Game State
   const [activeRoom, setActiveRoom] = useState<GameRoom | null>(null);
   const [matchmakingCategory, setMatchmakingCategory] = useState<GameCategory | 'mixed' | null>(null);
+  const [matchmakingTargetCountry, setMatchmakingTargetCountry] = useState<string | undefined>(undefined);
   const [isDailyChallengeOpen, setIsDailyChallengeOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -106,8 +107,11 @@ function AppContent() {
         }}
         onRematch={() => {
           sounds.playPop();
+          const prevMode = activeRoom.gameMode;
+          const prevCountry = activeRoom.targetCountryCode;
           setActiveRoom(null);
-          setMatchmakingCategory(activeRoom.gameMode);
+          setMatchmakingTargetCountry(prevCountry);
+          setMatchmakingCategory(prevMode);
         }}
       />
     );
@@ -129,7 +133,10 @@ function AppContent() {
       <main className="flex-1 max-w-md w-full mx-auto p-4">
         {currentTab === 'home' && (
           <HomeScreen
-            onStartMatchmaking={() => setMatchmakingCategory('mixed')}
+            onStartMatchmaking={() => {
+              setMatchmakingTargetCountry(undefined);
+              setMatchmakingCategory('mixed');
+            }}
             onNavigateTab={(tab) => setCurrentTab(tab)}
             onOpenDailyChallenge={() => setIsDailyChallengeOpen(true)}
             onOpenAuth={() => setIsAuthOpen(true)}
@@ -140,6 +147,7 @@ function AppContent() {
           <ExploreScreen
             passportStamps={stamps}
             onStartMatchmakingWithCountry={(code) => {
+              setMatchmakingTargetCountry(code);
               setMatchmakingCategory('mixed');
             }}
           />
@@ -148,6 +156,7 @@ function AppContent() {
         {currentTab === 'play' && (
           <PlayScreen
             onStartMatch={(cat) => {
+              setMatchmakingTargetCountry(undefined);
               setMatchmakingCategory(cat);
             }}
           />
@@ -158,6 +167,7 @@ function AppContent() {
             user={userProfile}
             stamps={stamps}
             onStartMatchWithCountry={(code) => {
+              setMatchmakingTargetCountry(code);
               setMatchmakingCategory('mixed');
             }}
           />
@@ -192,18 +202,26 @@ function AppContent() {
         userProfile ? (
           <MatchmakingModal
             isOpen={Boolean(matchmakingCategory)}
-            onClose={() => setMatchmakingCategory(null)}
+            onClose={() => {
+              setMatchmakingCategory(null);
+              setMatchmakingTargetCountry(undefined);
+            }}
             user={userProfile}
             category={matchmakingCategory}
+            targetCountryCode={matchmakingTargetCountry}
             onMatchFound={(room) => {
               setMatchmakingCategory(null);
+              setMatchmakingTargetCountry(undefined);
               setActiveRoom(room);
             }}
           />
         ) : (
           <AuthModal
             isOpen={true}
-            onClose={() => setMatchmakingCategory(null)}
+            onClose={() => {
+              setMatchmakingCategory(null);
+              setMatchmakingTargetCountry(undefined);
+            }}
           />
         )
       )}

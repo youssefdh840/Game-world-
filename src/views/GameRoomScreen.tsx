@@ -8,6 +8,8 @@ import {
   subscribeToRoomMessages,
   sendRoomChatMessage,
   reportUser,
+  fetchDynamicGameQuestions,
+  recordQuestionsAnsweredInSession,
 } from '../services/gameService';
 import { awardGameResults } from '../services/userService';
 import { sounds } from '../services/soundEffects';
@@ -74,11 +76,15 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const isHostRef = useRef<boolean>(isHost);
   isHostRef.current = isHost;
 
+  // Active question accessor
+  const currentQ = room.currentQuestion || (room.questions && room.questions[room.currentRound - 1]);
+
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const roundStartTimeRef = useRef<number>(Date.now());
-  const roundTransitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const activeRoundRef = useRef<number>(0);
+  const isAdvancingRoundRef = useRef<boolean>(false);
   const botAnswerTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const hasAdvancedThisRoundRef = useRef<number | null>(null);
+  const roundTransitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const guestFallbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Subscribe to real-time room updates and chat
@@ -91,7 +97,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         updated.roundStartTime > 0 &&
         updated.currentRound === roomRef.current.currentRound
       ) {
-        roundStartTimeRef.current = updated.roundStartTime;
+        if (Math.abs(roundStartTimeRef.current - updated.roundStartTime) > 400) {
+          roundStartTimeRef.current = updated.roundStartTime;
+        }
       }
     });
 
@@ -115,6 +123,33 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       if (botAnswerTimerRef.current) clearTimeout(botAnswerTimerRef.current);
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
     };
+  }, [room.id]);
+
+  // Fallback question hydration if room was initialized with empty questions
+  useEffect(() => {
+    if (!room.questions || room.questions.length === 0) {
+      fetchDynamicGameQuestions({
+        category: room.gameMode,
+        countryCode: room.targetCountryCode,
+        count: room.totalRounds || 5,
+        userLevel: user.level,
+      }).then((qs) => {
+        if (qs.length > 0) {
+          const now = Date.now();
+          roundStartTimeRef.current = now;
+          setRoom((prev) => ({
+            ...prev,
+            questions: qs,
+            currentQuestion: qs[0],
+            roundStartedAt: now,
+            roundStartTime: now,
+          }));
+          if (isHostRef.current || room.isBotOpponent) {
+            syncRoomRoundStartTime(room.id, now);
+          }
+        }
+      });
+    }
   }, [room.id]);
 
   // Execute round advancement (host updates Firestore, local state updates optimistically)
@@ -166,13 +201,10 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
   // Safe trigger for round advancement with answer explanation window
   const triggerRoundAdvance = (_reason: string) => {
-    const currentRoundNum = roomRef.current.currentRound;
-    if (hasAdvancedThisRoundRef.current === currentRoundNum) {
-      return;
-    }
-    hasAdvancedThisRoundRef.current = currentRoundNum;
+    if (isAdvancingRoundRef.current) return;
+    isAdvancingRoundRef.current = true;
 
-    // Halt question timer
+    // Halt question countdown timer
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -193,6 +225,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     // Multiplayer Guest fallback: if Host dropped or lagged, Guest advances after buffer
     if (!isHostRef.current && !roomRef.current.isBotOpponent) {
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
+      const currentRoundNum = roomRef.current.currentRound;
       guestFallbackTimeoutRef.current = setTimeout(() => {
         if (roomRef.current.currentRound === currentRoundNum && roomRef.current.status !== 'finished') {
           advanceToNextRoundOrFinish(roomRef.current.id, roomRef.current);
@@ -201,7 +234,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     }
   };
 
-  // Handle current round change / start timestamp-based countdown timer
+  // Handle current round change / start timestamp-based countdown timer as soon as question loads
   useEffect(() => {
     if (room.status === 'finished') {
       if (timerRef.current) {
@@ -219,7 +252,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     setSelectedAnswer(null);
     setHasAnswered(false);
     setShowExplanation(false);
-    hasAdvancedThisRoundRef.current = null;
+    isAdvancingRoundRef.current = false;
+    activeRoundRef.current = room.currentRound;
 
     // Clean up previous interval/timeouts
     if (timerRef.current) {
@@ -230,12 +264,20 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     if (botAnswerTimerRef.current) clearTimeout(botAnswerTimerRef.current);
     if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
 
-    // Determine authoritative round start timestamp
+    // If current question has not loaded yet, wait for it
+    if (!currentQ) return;
+
+    // Record question in session deduplication tracker
+    if (currentQ.id) {
+      recordQuestionsAnsweredInSession([currentQ.id]);
+    }
+
+    // Authoritative round start timestamp calculation
     const now = Date.now();
     let startTime = room.roundStartTime || room.roundStartedAt || 0;
 
-    // If timestamp is missing, 0, in future (> now + 1000), or older than 12s, initialize to now
-    if (!startTime || startTime > now + 1000 || now - startTime > 12000) {
+    // If timestamp is missing, in future (> now + 500ms), or stale (> 10s old), initialize to now
+    if (!startTime || startTime > now + 500 || now - startTime >= 10000) {
       startTime = now;
       roundStartTimeRef.current = now;
       setRoom((prev) => ({
@@ -243,28 +285,24 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         roundStartTime: now,
         roundStartedAt: now,
       }));
-      if (isHostRef.current) {
+      if (isHostRef.current || room.isBotOpponent) {
         syncRoomRoundStartTime(room.id, now);
       }
     } else {
       roundStartTimeRef.current = startTime;
     }
 
-    // Timestamp-based calculation: (ROUND_DURATION - elapsed)
-    const getRemainingSeconds = () => {
-      const elapsed = (Date.now() - roundStartTimeRef.current) / 1000;
-      return Math.max(0, Math.ceil(10 - elapsed));
-    };
-
-    const initialRemaining = getRemainingSeconds();
+    // Initial countdown calculation
+    const elapsedInitial = Math.floor((Date.now() - roundStartTimeRef.current) / 1000);
+    const initialRemaining = Math.max(0, 10 - elapsedInitial);
     setTimeLeft(initialRemaining);
 
     let lastSoundSecond = -1;
 
-    // High-precision interval checking Date.now() against roundStartTime
+    // High-precision interval checking Date.now() against roundStartTimeRef
     timerRef.current = setInterval(() => {
-      // If round transition is in progress, stop timer
-      if (hasAdvancedThisRoundRef.current !== null) {
+      // Discontinue if round transition is in progress or round changed
+      if (isAdvancingRoundRef.current || activeRoundRef.current !== roomRef.current.currentRound) {
         if (timerRef.current) {
           clearInterval(timerRef.current);
           timerRef.current = null;
@@ -272,7 +310,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         return;
       }
 
-      const remaining = getRemainingSeconds();
+      const elapsed = Math.floor((Date.now() - roundStartTimeRef.current) / 1000);
+      const remaining = Math.max(0, 10 - elapsed);
       setTimeLeft(remaining);
 
       if (remaining <= 3 && remaining > 0 && remaining !== lastSoundSecond) {
@@ -293,16 +332,15 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     if (room.isBotOpponent && !room.guestAnswer) {
       const botDelay = 1800 + Math.random() * 1600;
       botAnswerTimerRef.current = setTimeout(() => {
-        const curQ =
-          roomRef.current.currentQuestion ||
-          (roomRef.current.questions && roomRef.current.questions[roomRef.current.currentRound - 1]);
-        if (!curQ) return;
+        if (isAdvancingRoundRef.current) return;
+        const q = currentQ;
+        if (!q) return;
 
         // Bot has ~80% accuracy
         const isBotCorrect = Math.random() > 0.2;
         const botAns = isBotCorrect
-          ? curQ.correctAnswer
-          : curQ.options.find((o) => o !== curQ.correctAnswer) || curQ.options[0];
+          ? q.correctAnswer
+          : q.options.find((o) => o !== q.correctAnswer) || q.options[0];
 
         const botPoints = isBotCorrect
           ? Math.max(50, 100 + Math.floor((10000 - Math.min(botDelay, 10000)) / 100))
@@ -326,7 +364,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
     };
-  }, [room.currentRound, room.id]);
+  }, [room.currentRound, room.id, currentQ?.id]);
 
   // Monitor when both players have submitted answers
   useEffect(() => {
@@ -375,12 +413,12 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   };
 
   const handleAnswerSelect = (option: string) => {
-    if (hasAnswered || showExplanation) return;
+    if (hasAnswered || showExplanation || isAdvancingRoundRef.current) return;
     setHasAnswered(true);
     setSelectedAnswer(option);
 
-    const timeTaken = Date.now() - roundStartTimeRef.current;
-    const curQ = room.currentQuestion || (room.questions && room.questions[room.currentRound - 1]);
+    const timeTaken = Math.max(0, Date.now() - roundStartTimeRef.current);
+    const curQ = currentQ;
     const isCorrect = curQ ? option === curQ.correctAnswer : false;
 
     if (isCorrect) {
@@ -415,6 +453,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       if (botAnswerTimerRef.current) clearTimeout(botAnswerTimerRef.current);
       const quickDelay = 600 + Math.random() * 800;
       botAnswerTimerRef.current = setTimeout(() => {
+        if (isAdvancingRoundRef.current) return;
         if (!curQ) return;
         const isBotCorrect = Math.random() > 0.25;
         const botAns = isBotCorrect
@@ -446,6 +485,10 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       });
     } catch {
       // confetti
+    }
+
+    if (room.questions && room.questions.length > 0) {
+      recordQuestionsAnsweredInSession(room.questions.map((q) => q.id));
     }
 
     const myScore = isHost ? room.hostScore : room.guestScore;
@@ -530,7 +573,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     }, 1500);
   };
 
-  const currentQ = room.currentQuestion || (room.questions && room.questions[room.currentRound - 1]);
   const opponentName = isHost ? room.guestUsername : room.hostUsername;
   const opponentAvatar = isHost ? room.guestAvatar : room.hostAvatar;
   const opponentFlag = isHost ? room.guestCountryFlag : room.hostCountryFlag;
@@ -714,7 +756,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         {/* Timer Bar */}
         <div className="w-full h-1.5 bg-slate-800 rounded-full mt-2.5 overflow-hidden">
           <div
-            className={`h-full transition-all duration-1000 ${
+            className={`h-full transition-all duration-300 ${
               timeLeft <= 3 ? 'bg-rose-500 animate-pulse' : 'bg-gradient-to-r from-amber-400 to-rose-500'
             }`}
             style={{ width: `${(timeLeft / 10) * 100}%` }}

@@ -47,12 +47,23 @@ export interface CountryData {
   mapCoords?: { x: number; y: number }; // Relative percentage for map pin (0-100)
 }
 
+export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
+export type QuestionSubCategory =
+  | 'Culture'
+  | 'Geography'
+  | 'History'
+  | 'Landmarks'
+  | 'Food'
+  | 'Music'
+  | 'Language'
+  | 'Traditions';
+
 export interface Question {
   id: string;
   category: GameCategory;
   countryCode: string;
   countryName: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: QuestionDifficulty;
   prompt: string;
   options: string[];
   correctAnswer: string;
@@ -62,6 +73,8 @@ export interface Question {
   targetCountryCode?: string; // For map questions
   active: boolean;
   culturalNote?: string;
+  subCategory?: QuestionSubCategory;
+  source?: 'curated' | 'opentdb' | 'firestore' | 'community';
 }
 
 export type GameRoomStatus = 'waiting' | 'starting' | 'playing' | 'round_result' | 'finished';
@@ -89,6 +102,7 @@ export interface GameRoom {
   guestReady: boolean;
 
   gameMode: GameCategory | 'mixed';
+  targetCountryCode?: string;
   status: GameRoomStatus;
   currentRound: number;
   totalRounds: number;

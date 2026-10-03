@@ -11,7 +11,7 @@ import {
 import { getGameRoom } from '../services/gameService';
 import { sounds } from '../services/soundEffects';
 import { SEED_LEADERBOARD } from '../services/userService';
-import { getRandomQuestions, getQuestionsByCategory } from '../services/questionData';
+import { fetchDynamicGameQuestions } from '../services/questionService';
 import {
   Globe2,
   X,
@@ -31,6 +31,7 @@ interface MatchmakingModalProps {
   onClose: () => void;
   user: UserProfile;
   category: GameCategory | 'mixed';
+  targetCountryCode?: string;
   onMatchFound: (room: GameRoom) => void;
 }
 
@@ -39,6 +40,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
   onClose,
   user,
   category,
+  targetCountryCode,
   onMatchFound,
 }) => {
   const [tab, setTab] = useState<'queue' | 'code'>('queue');
@@ -93,13 +95,16 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         sounds.playCountdown();
       } else {
         if (cdIntervalRef.current) clearInterval(cdIntervalRef.current);
+        const now = Date.now();
+        room.roundStartTime = now;
+        room.roundStartedAt = now;
         onMatchFound(room);
       }
     }, 1000);
   };
 
   // Helper to start bot match if no player is in queue
-  const startBotMatch = () => {
+  const startBotMatch = async () => {
     cleanUpListeners();
     const candidateBots = SEED_LEADERBOARD.filter((b) => b.countryCode !== user.countryCode);
     const botOpponent =
@@ -107,13 +112,16 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         ? candidateBots[Math.floor(Math.random() * candidateBots.length)]
         : SEED_LEADERBOARD[0];
 
-    const questions =
-      category === 'mixed'
-        ? getRandomQuestions(5)
-        : getQuestionsByCategory(category, 5);
+    const questions = await fetchDynamicGameQuestions({
+      count: 5,
+      category,
+      countryCode: targetCountryCode,
+      userLevel: user.level,
+    });
 
+    const now = Date.now();
     const botRoom: GameRoom = {
-      id: `room_bot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `room_bot_${now}_${Math.random().toString(36).substring(2, 6)}`,
       hostId: user.uid,
       hostUsername: user.username,
       hostCountryCode: user.countryCode,
@@ -131,14 +139,15 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
       guestReady: true,
 
       gameMode: category,
+      targetCountryCode,
       status: 'playing',
       currentRound: 1,
       totalRounds: questions.length,
       questionIds: questions.map((q) => q.id),
       questions,
       currentQuestion: questions[0],
-      roundStartedAt: Date.now(),
-      roundStartTime: Date.now(),
+      roundStartedAt: now,
+      roundStartTime: now,
       isBotOpponent: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

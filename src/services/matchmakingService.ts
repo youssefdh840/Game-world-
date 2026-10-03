@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { UserProfile, GameCategory, GameRoom } from '../types/game';
-import { getRandomQuestions, getQuestionsByCategory } from './questionData';
+import { fetchDynamicGameQuestions } from './questionService';
 
 export interface MatchTicket {
   userId: string;
@@ -36,7 +36,8 @@ export interface JoinQueueResult {
 // Joins the worldwide matchmaking queue for REAL PLAYERS ONLY
 export async function joinMatchmakingQueue(
   user: UserProfile,
-  preferredCategory: GameCategory | 'mixed' = 'mixed'
+  preferredCategory: GameCategory | 'mixed' = 'mixed',
+  targetCountryCode?: string
 ): Promise<JoinQueueResult> {
   const ticketId = `ticket_${user.uid}`;
 
@@ -58,11 +59,13 @@ export async function joinMatchmakingQueue(
       const opponentTicket = opponents[0];
       const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-      // Select 5 real questions
-      const questions =
-        preferredCategory === 'mixed'
-          ? getRandomQuestions(5)
-          : getQuestionsByCategory(preferredCategory, 5);
+      // Select 5 diverse, non-repeating questions
+      const questions = await fetchDynamicGameQuestions({
+        count: 5,
+        category: preferredCategory,
+        countryCode: targetCountryCode,
+        userLevel: user.level,
+      });
 
       const roomData: GameRoom = {
         id: roomId,
@@ -83,6 +86,7 @@ export async function joinMatchmakingQueue(
         guestReady: true,
 
         gameMode: preferredCategory,
+        targetCountryCode,
         status: 'starting',
         currentRound: 1,
         totalRounds: questions.length,
@@ -199,10 +203,11 @@ export async function createPrivateDuelRoom(
   const roomCode = generateRoomCode();
   const roomId = `room_code_${roomCode}`;
 
-  const questions =
-    preferredCategory === 'mixed'
-      ? getRandomQuestions(5)
-      : getQuestionsByCategory(preferredCategory, 5);
+  const questions = await fetchDynamicGameQuestions({
+    count: 5,
+    category: preferredCategory,
+    userLevel: user.level,
+  });
 
   const roomData: GameRoom = {
     id: roomId,
