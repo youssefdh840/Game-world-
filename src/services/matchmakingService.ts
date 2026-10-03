@@ -220,10 +220,10 @@ export async function createPrivateDuelRoom(
     hostReady: true,
 
     guestId: '',
-    guestUsername: 'Waiting for friend...',
-    guestCountryCode: '??',
-    guestCountryFlag: '🌐',
-    guestAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80',
+    guestUsername: '',
+    guestCountryCode: '',
+    guestCountryFlag: '',
+    guestAvatar: '',
     guestScore: 0,
     guestReady: false,
 

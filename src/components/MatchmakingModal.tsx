@@ -17,13 +17,13 @@ import {
   X,
   CheckCircle2,
   Users,
+  User,
   KeyRound,
   Swords,
   Copy,
   Check,
   Loader2,
   Sparkles,
-  Zap,
 } from 'lucide-react';
 
 interface MatchmakingModalProps {
@@ -44,7 +44,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
   onMatchFound,
 }) => {
   const [tab, setTab] = useState<'queue' | 'code'>('queue');
-  const [statusText, setStatusText] = useState('Connecting to global matchmaking...');
+  const [statusText, setStatusText] = useState('Searching for opponent...');
   const [matchedOpponent, setMatchedOpponent] = useState<Partial<UserProfile> | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -81,7 +81,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
   const commenceMatch = (room: GameRoom, opponent: Partial<UserProfile>) => {
     cleanUpListeners();
     setMatchedOpponent(opponent);
-    setStatusText(`Real Challenger Found: ${opponent.username || 'Opponent'}!`);
+    setStatusText(`Opponent found: ${opponent.username || 'Opponent'}!`);
     sounds.playCorrect();
 
     let cd = 3;
@@ -161,7 +161,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     if (!isOpen || tab !== 'queue') return;
 
     sounds.playPop();
-    setStatusText('Searching worldwide for a real opponent...');
+    setStatusText('Searching for opponent...');
     setMatchedOpponent(null);
     setCountdown(null);
     setElapsedSeconds(0);
@@ -363,27 +363,27 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         {tab === 'queue' && (
           <div>
             {!matchedOpponent ? (
-              <div className="my-6 relative flex flex-col items-center justify-center">
-                {/* Radar Waves */}
-                <div className="relative flex items-center justify-center w-40 h-40">
-                  <div className="absolute w-40 h-40 rounded-full border border-indigo-500/20 animate-ping" />
-                  <div className="absolute w-32 h-32 rounded-full border border-rose-500/30 animate-pulse" />
-                  <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 flex items-center justify-center text-4xl shadow-xl shadow-rose-500/30">
-                    <Globe2 className="w-12 h-12 text-white animate-spin-slow" />
+              <div className="my-8 relative flex flex-col items-center justify-center">
+                {/* Clean Loading Pulse & Spinner */}
+                <div className="relative flex items-center justify-center w-36 h-36">
+                  <div className="absolute w-36 h-36 rounded-full border border-indigo-500/20 animate-ping" />
+                  <div className="absolute w-28 h-28 rounded-full border border-rose-500/30 animate-pulse" />
+                  <div className="w-20 h-20 rounded-full bg-slate-800/80 border border-slate-700/80 flex items-center justify-center shadow-xl">
+                    <Loader2 className="w-10 h-10 text-indigo-400 animate-spin" />
                   </div>
                 </div>
 
-                {/* Live Search Timer */}
-                <div className="mt-4 font-mono font-bold text-sm text-indigo-400 bg-slate-950 px-3 py-1 rounded-full border border-slate-800">
-                  Searching: {formatElapsed(elapsedSeconds)}
+                {/* Live Search Duration */}
+                <div className="mt-5 font-mono font-bold text-xs text-indigo-400 bg-slate-950 px-3 py-1 rounded-full border border-slate-800">
+                  Elapsed: {formatElapsed(elapsedSeconds)}
                 </div>
               </div>
             ) : (
-              /* Challenger Found VS Screen */
+              /* Opponent Found VS Screen - Only rendered once real match is established */
               <div className="my-6 animate-scale-up">
                 <div className="inline-flex items-center gap-1.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 px-3 py-1 rounded-full text-xs font-bold mb-4">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>OPPONENT MATCHED!</span>
+                  <span>OPPONENT FOUND!</span>
                 </div>
 
                 <div className="flex items-center justify-center gap-4">
@@ -407,18 +407,21 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
                     </span>
                   </div>
 
-                  {/* Real Opponent */}
+                  {/* Established Opponent */}
                   <div className="flex flex-col items-center">
-                    <img
-                      src={
-                        matchedOpponent.avatar ||
-                        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80'
-                      }
-                      alt={matchedOpponent.username || 'Opponent'}
-                      className="w-16 h-16 rounded-2xl object-cover ring-2 ring-rose-500 shadow-md bg-slate-800"
-                    />
+                    {matchedOpponent.avatar ? (
+                      <img
+                        src={matchedOpponent.avatar}
+                        alt={matchedOpponent.username || 'Opponent'}
+                        className="w-16 h-16 rounded-2xl object-cover ring-2 ring-rose-500 shadow-md bg-slate-800"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-500 to-amber-500 flex items-center justify-center text-white font-black text-xl ring-2 ring-rose-500 shadow-md">
+                        {matchedOpponent.username ? matchedOpponent.username.charAt(0).toUpperCase() : '?'}
+                      </div>
+                    )}
                     <span className="text-xs font-extrabold text-white mt-1.5 truncate max-w-[80px]">
-                      {matchedOpponent.username || 'Challenger'}
+                      {matchedOpponent.username || 'Opponent'}
                     </span>
                     <span className="text-base">{matchedOpponent.countryFlag || '🌐'}</span>
                   </div>
@@ -430,33 +433,24 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
                     <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-r from-amber-500 to-rose-500 text-white font-black text-2xl shadow-lg animate-bounce">
                       {countdown}
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-1 font-bold">MATCH COMMENCING...</p>
+                    <p className="text-[11px] text-slate-400 mt-1 font-bold">STARTING MATCH...</p>
                   </div>
                 )}
               </div>
             )}
 
-            <h3 className="text-lg font-black text-white">{statusText}</h3>
+            <h3 className="text-lg font-black text-white">
+              {!matchedOpponent ? 'Searching for opponent...' : statusText}
+            </h3>
             <p className="text-xs text-slate-400 mt-1">
               {!matchedOpponent
-                ? 'Waiting for another human player to enter the matchmaking queue...'
+                ? 'Looking for an available player...'
                 : 'Connecting to synchronized live duel session!'}
             </p>
 
-            {/* Quick action: Instant Play or Cancel or switch to code */}
+            {/* Quick Actions during search */}
             {!matchedOpponent && (
               <div className="mt-6 space-y-2.5">
-                <button
-                  onClick={() => {
-                    sounds.playPop();
-                    startBotMatch();
-                  }}
-                  className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-rose-600/30 flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 transition-all"
-                >
-                  <Zap className="w-4 h-4 fill-current text-yellow-300" />
-                  <span>Play Instantly with World Challenger</span>
-                </button>
-
                 <button
                   onClick={() => {
                     sounds.playPop();
