@@ -10,8 +10,6 @@ import {
 } from '../services/matchmakingService';
 import { getGameRoom } from '../services/gameService';
 import { sounds } from '../services/soundEffects';
-import { SEED_LEADERBOARD } from '../services/userService';
-import { fetchDynamicGameQuestions } from '../services/questionService';
 import {
   Globe2,
   X,
@@ -44,7 +42,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
   onMatchFound,
 }) => {
   const [tab, setTab] = useState<'queue' | 'code'>('queue');
-  const [statusText, setStatusText] = useState('Searching for opponent...');
+  const [statusText, setStatusText] = useState('Searching for a real opponent...');
   const [matchedOpponent, setMatchedOpponent] = useState<Partial<UserProfile> | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -81,7 +79,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
   const commenceMatch = (room: GameRoom, opponent: Partial<UserProfile>) => {
     cleanUpListeners();
     setMatchedOpponent(opponent);
-    setStatusText(`Opponent found: ${opponent.username || 'Opponent'}!`);
+    setStatusText(`Real challenger found: ${opponent.username || 'Opponent'}!`);
     sounds.playCorrect();
 
     let cd = 3;
@@ -103,84 +101,24 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     }, 1000);
   };
 
-  // Helper to start bot match if no player is in queue
-  const startBotMatch = async () => {
-    cleanUpListeners();
-    const candidateBots = SEED_LEADERBOARD.filter((b) => b.countryCode !== user.countryCode);
-    const botOpponent =
-      candidateBots.length > 0
-        ? candidateBots[Math.floor(Math.random() * candidateBots.length)]
-        : SEED_LEADERBOARD[0];
-
-    const questions = await fetchDynamicGameQuestions({
-      count: 5,
-      category,
-      countryCode: targetCountryCode,
-      userLevel: user.level,
-    });
-
-    const now = Date.now();
-    const botRoom: GameRoom = {
-      id: `room_bot_${now}_${Math.random().toString(36).substring(2, 6)}`,
-      hostId: user.uid,
-      hostUsername: user.username,
-      hostCountryCode: user.countryCode,
-      hostCountryFlag: user.countryFlag,
-      hostAvatar: user.avatar,
-      hostScore: 0,
-      hostReady: true,
-
-      guestId: botOpponent.uid,
-      guestUsername: botOpponent.username,
-      guestCountryCode: botOpponent.countryCode,
-      guestCountryFlag: botOpponent.countryFlag,
-      guestAvatar: botOpponent.avatar,
-      guestScore: 0,
-      guestReady: true,
-
-      gameMode: category,
-      targetCountryCode,
-      status: 'playing',
-      currentRound: 1,
-      totalRounds: questions.length,
-      questionIds: questions.map((q) => q.id),
-      questions,
-      currentQuestion: questions[0],
-      roundStartedAt: now,
-      roundStartTime: now,
-      isBotOpponent: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    commenceMatch(botRoom, botOpponent);
-  };
-
-  // 1. Worldwide Queue Search (Real Players Only - Zero AI)
+  // 1. Worldwide Queue Search (Real Players Only - Zero AI/Bots)
   useEffect(() => {
     if (!isOpen || tab !== 'queue') return;
 
     sounds.playPop();
-    setStatusText('Searching for opponent...');
+    setStatusText('Searching for a real opponent...');
     setMatchedOpponent(null);
     setCountdown(null);
     setElapsedSeconds(0);
 
     const timer = setInterval(() => {
-      setElapsedSeconds((prev) => {
-        const next = prev + 1;
-        // Auto-match after 7 seconds if no other real player is in queue
-        if (next >= 7 && !matchedOpponent) {
-          startBotMatch();
-        }
-        return next;
-      });
+      setElapsedSeconds((prev) => prev + 1);
     }, 1000);
 
     let isCancelled = false;
 
     // Join the real Firestore queue
-    joinMatchmakingQueue(user, category)
+    joinMatchmakingQueue(user, category, targetCountryCode)
       .then(({ ticketId, matchedRoom }) => {
         if (isCancelled) {
           leaveMatchmakingQueue(ticketId);
@@ -227,7 +165,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
       })
       .catch((err) => {
         console.warn('Matchmaking queue error:', err);
-        setStatusText('Waiting for real players in queue...');
+        setStatusText('Searching for a real opponent...');
       });
 
     return () => {
@@ -440,11 +378,11 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
             )}
 
             <h3 className="text-lg font-black text-white">
-              {!matchedOpponent ? 'Searching for opponent...' : statusText}
+              {!matchedOpponent ? 'Searching for a real opponent...' : statusText}
             </h3>
             <p className="text-xs text-slate-400 mt-1">
               {!matchedOpponent
-                ? 'Looking for an available player...'
+                ? 'Waiting for another real player to join the queue...'
                 : 'Connecting to synchronized live duel session!'}
             </p>
 
