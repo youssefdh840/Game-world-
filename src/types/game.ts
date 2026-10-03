@@ -97,6 +97,7 @@ export interface GameRoom {
   currentQuestion?: Question;
   winnerId?: string | 'tie' | null;
   roundStartedAt?: number;
+  roundStartTime?: number;
   isBotOpponent?: boolean;
   createdAt: string;
   updatedAt: string;

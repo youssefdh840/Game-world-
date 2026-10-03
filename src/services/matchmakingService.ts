@@ -89,7 +89,8 @@ export async function joinMatchmakingQueue(
         questionIds: questions.map((q) => q.id),
         questions,
         currentQuestion: questions[0],
-        roundStartedAt: Date.now() + 3000,
+        roundStartedAt: Date.now(),
+        roundStartTime: Date.now(),
         isBotOpponent: false, // NO BOTS - REAL PEOPLE ONLY
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -229,6 +230,7 @@ export async function createPrivateDuelRoom(
     questions,
     currentQuestion: questions[0],
     roundStartedAt: 0,
+    roundStartTime: 0,
     isBotOpponent: false, // NO BOTS
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -268,7 +270,8 @@ export async function joinPrivateDuelRoom(
     guestAvatar: user.avatar,
     guestReady: true,
     status: 'starting',
-    roundStartedAt: Date.now() + 3000,
+    roundStartedAt: Date.now(),
+    roundStartTime: Date.now(),
     updatedAt: new Date().toISOString(),
   };
 

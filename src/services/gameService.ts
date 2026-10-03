@@ -134,6 +134,7 @@ export async function advanceToNextRoundOrFinish(
 
     // Move to next round
     const nextQuestion = currentData.questions ? currentData.questions[nextRound - 1] : undefined;
+    const now = Date.now();
     const updates: Partial<GameRoom> = {
       currentRound: nextRound,
       currentQuestion: nextQuestion,
@@ -142,13 +143,27 @@ export async function advanceToNextRoundOrFinish(
       hostAnswerTime: null,
       guestAnswer: null,
       guestAnswerTime: null,
-      roundStartedAt: Date.now(),
+      roundStartedAt: now,
+      roundStartTime: now,
       updatedAt: new Date().toISOString(),
     };
 
     await updateDoc(roomDocRef, updates);
   } catch (error) {
     console.warn(`Could not advance round (${roomId}):`, error);
+  }
+}
+
+export async function syncRoomRoundStartTime(roomId: string, startTime: number) {
+  if (roomId.startsWith('room_bot_')) return;
+  try {
+    await updateDoc(doc(db, 'gameRooms', roomId), {
+      roundStartTime: startTime,
+      roundStartedAt: startTime,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn(`Could not sync roundStartTime for ${roomId}:`, err);
   }
 }
 

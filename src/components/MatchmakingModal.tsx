@@ -138,6 +138,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
       questions,
       currentQuestion: questions[0],
       roundStartedAt: Date.now(),
+      roundStartTime: Date.now(),
       isBotOpponent: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
