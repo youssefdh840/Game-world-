@@ -5,22 +5,18 @@ import { COUNTRIES } from '../services/countryData';
 import { BADGES } from '../services/badgesData';
 import { calculateLevel, subscribeToUserProfile } from '../services/userService';
 import { sounds } from '../services/soundEffects';
-import { FirebaseConfigModal } from '../components/FirebaseConfigModal';
 import {
-  User,
   Globe,
   Award,
   Trophy,
   Flame,
   Gamepad2,
   CheckCircle2,
-  Lock,
   LogOut,
   Edit2,
   Save,
   Volume2,
   VolumeX,
-  KeyRound,
   LogIn,
   Loader2,
 } from 'lucide-react';
@@ -47,7 +43,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [language, setLanguage] = useState(user.preferredLanguage || 'English');
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const [isFirebaseConfigOpen, setIsFirebaseConfigOpen] = useState(false);
 
   // Sync with prop updates
   useEffect(() => {
@@ -378,26 +373,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </button>
         </div>
 
-        {/* Firebase & Cloud Diagnostics */}
-        <div className="flex items-center justify-between py-1 border-t border-slate-800 pt-3">
-          <div className="flex items-center gap-2.5 text-xs text-slate-300 font-semibold">
-            <KeyRound className="w-4 h-4 text-amber-400" />
-            <div>
-              <span>Firebase & Cloud Sync</span>
-              <p className="text-[10px] text-slate-500 font-normal">Check connection status & API key</p>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              sounds.playPop();
-              setIsFirebaseConfigOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition-colors cursor-pointer"
-          >
-            Configure
-          </button>
-        </div>
-
         {/* Auth / Logout / Login */}
         <div className="pt-2 border-t border-slate-800">
           {firebaseUser && !firebaseUser.isAnonymous ? (
@@ -406,7 +381,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   <div>
-                    <span className="font-bold text-white block">{firebaseUser.email || user.username}</span>
+                    <span className="font-bold text-white block">{firebaseUser.email || liveUser.username}</span>
                     <span className="text-[10px] text-emerald-400 font-semibold">Account Synced to Firebase Cloud</span>
                   </div>
                 </div>
@@ -445,11 +420,92 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         </div>
       </div>
 
-      {/* Firebase Config & Diagnostics Modal */}
-      <FirebaseConfigModal
-        isOpen={isFirebaseConfigOpen}
-        onClose={() => setIsFirebaseConfigOpen(false)}
-      />
+      {/* Created by Footer with Diamond-Crowned Instagram Logo */}
+      <footer className="pt-2 pb-4 flex justify-center">
+        <a
+          href="https://www.instagram.com/nefzaouiassil?stkn=MTRkZXUzN3R3emJoNA=="
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => sounds.playPop()}
+          className="group inline-flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-slate-900/90 hover:bg-slate-900 border border-slate-800 hover:border-slate-600 shadow-lg transition-all active:scale-95 cursor-pointer"
+        >
+          {/* Diamond-Crowned Instagram Icon Badge */}
+          <div className="w-9 h-9 rounded-xl bg-black border border-slate-700/80 group-hover:border-white/40 flex items-center justify-center shadow-md overflow-hidden shrink-0 transition-colors">
+            <svg
+              viewBox="0 0 64 64"
+              className="w-7 h-7"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <defs>
+                <linearGradient id="diamondSilver" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#FFFFFF" />
+                  <stop offset="35%" stopColor="#CBD5E1" />
+                  <stop offset="65%" stopColor="#F8FAFC" />
+                  <stop offset="100%" stopColor="#94A3B8" />
+                </linearGradient>
+                <linearGradient id="crownFacet" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#94A3B8" />
+                  <stop offset="50%" stopColor="#FFFFFF" />
+                  <stop offset="100%" stopColor="#E2E8F0" />
+                </linearGradient>
+              </defs>
+              {/* Tilted Diamond Crown on Top */}
+              <g transform="rotate(-10 32 18)">
+                <path
+                  d="M14 23L11 12L21 17L29 7L36 17L47 11L44 23H14Z"
+                  fill="url(#crownFacet)"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M14 23H44V26C44 26.8 43.3 27.5 42.5 27.5H15.5C14.7 27.5 14 26.8 14 26V23Z"
+                  fill="url(#diamondSilver)"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.2"
+                />
+                <circle cx="29" cy="6" r="1.6" fill="#FFFFFF" />
+                <circle cx="11" cy="11" r="1.3" fill="#FFFFFF" />
+                <circle cx="47" cy="10" r="1.3" fill="#FFFFFF" />
+              </g>
+              {/* Diamond-Cut Instagram Camera Body */}
+              <rect
+                x="15"
+                y="23"
+                width="34"
+                height="33"
+                rx="9"
+                stroke="url(#diamondSilver)"
+                strokeWidth="4.2"
+              />
+              {/* Inner Lens Ring */}
+              <circle
+                cx="32"
+                cy="39.5"
+                r="8.2"
+                stroke="url(#diamondSilver)"
+                strokeWidth="3.8"
+              />
+              {/* Flash Gem Dot */}
+              <circle cx="42.5" cy="30" r="2.4" fill="#FFFFFF" />
+              {/* Diamond Sparkle Glints */}
+              <path d="M15 29L17 30L15 31L14 33L13 31L11 30L13 29L14 27L15 29Z" fill="#FFFFFF" />
+              <path d="M50 45L51.5 46L50 47L49 48.5L48 47L46.5 46L48 45L49 43.5L50 45Z" fill="#FFFFFF" />
+            </svg>
+          </div>
+
+          <div className="text-left">
+            <span className="text-xs font-extrabold text-slate-200 group-hover:text-white tracking-wide transition-colors">
+              Created by <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-amber-300 font-black">nefzaouiassil</span>
+            </span>
+            <span className="block text-[10px] text-slate-400 group-hover:text-slate-300">
+              @nefzaouiassil • Instagram
+            </span>
+          </div>
+        </a>
+      </footer>
     </div>
   );
 };
