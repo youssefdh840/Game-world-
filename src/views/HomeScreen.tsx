@@ -48,57 +48,55 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <div className="absolute -top-12 -right-12 w-44 h-44 bg-rose-500/15 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute -bottom-10 -left-10 w-44 h-44 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
 
-            <div className="relative z-10 flex items-start justify-between gap-4">
-              <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
-                {/* Avatar with flag badge */}
-                <div className="relative shrink-0">
-                  <img
-                    src={
-                      userProfile?.avatar ||
-                      'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80'
-                    }
-                    alt={userProfile?.username || 'Avatar'}
-                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover ring-2 ring-indigo-500/40 shadow-lg bg-slate-800"
-                  />
-                  <span className="absolute -bottom-1.5 -right-1.5 text-lg sm:text-xl p-0.5 bg-slate-900 rounded-full shadow">
-                    {userProfile?.countryFlag || '🌐'}
-                  </span>
-                </div>
-
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight truncate">
-                      {userProfile?.username || 'Traveler'}
-                    </h2>
-                    {(!firebaseUser || firebaseUser.isAnonymous) && (
-                      <button
-                        onClick={() => {
-                          sounds.playPop();
-                          onOpenAuth();
-                        }}
-                        className="inline-flex items-center gap-1 text-[11px] bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold px-2.5 py-0.5 rounded-full shadow-md active:scale-95 transition-all cursor-pointer"
-                      >
-                        <LogIn className="w-3 h-3 stroke-[2.5]" />
-                        <span>Log In</span>
-                      </button>
-                    )}
-                  </div>
-                  <p className="text-xs sm:text-sm text-indigo-300 font-medium flex items-center gap-1.5 mt-1">
-                    <span>{userProfile?.countryName || 'Global Wanderer'}</span>
-                    <span>•</span>
-                    <span className="text-amber-400 font-bold">
-                      {totalWins} Wins
-                    </span>
-                  </p>
-                </div>
+            <div className="relative z-10 flex items-center gap-3.5 sm:gap-4">
+              {/* Avatar with flag badge */}
+              <div className="relative shrink-0">
+                <img
+                  src={
+                    userProfile?.avatar ||
+                    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80'
+                  }
+                  alt={userProfile?.username || 'Avatar'}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover ring-2 ring-indigo-500/40 shadow-lg bg-slate-800"
+                />
+                <span className="absolute -bottom-1.5 -right-1.5 text-lg sm:text-xl p-0.5 bg-slate-900 rounded-full shadow">
+                  {userProfile?.countryFlag || '🌐'}
+                </span>
               </div>
 
-              {/* Level Pill */}
-              <div className="text-right shrink-0">
-                <span className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-500 to-rose-500 text-white font-extrabold text-xs sm:text-sm px-3 py-1.5 rounded-xl shadow-md">
-                  <Zap className="w-3.5 h-3.5 fill-white" />
-                  LVL {levelInfo.level}
-                </span>
+              {/* User Identity & Meta */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-500 to-rose-500 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-0.5 rounded-lg shadow-sm shrink-0">
+                    <Zap className="w-3 h-3 fill-white" />
+                    LVL {levelInfo.level}
+                  </span>
+
+                  {(!firebaseUser || firebaseUser.isAnonymous) && (
+                    <button
+                      onClick={() => {
+                        sounds.playPop();
+                        onOpenAuth();
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold px-2.5 py-0.5 rounded-full shadow-md active:scale-95 transition-all cursor-pointer shrink-0"
+                    >
+                      <LogIn className="w-3 h-3 stroke-[2.5]" />
+                      <span>Log In</span>
+                    </button>
+                  )}
+                </div>
+
+                <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight break-words leading-snug mt-1">
+                  {userProfile?.username || 'Traveler'}
+                </h2>
+
+                <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-xs sm:text-sm text-indigo-300 font-medium mt-0.5">
+                  <span className="truncate">{userProfile?.countryName || 'Global Wanderer'}</span>
+                  <span className="text-slate-600">•</span>
+                  <span className="text-amber-400 font-bold whitespace-nowrap">
+                    {totalWins} {totalWins === 1 ? 'Win' : 'Wins'}
+                  </span>
+                </div>
               </div>
             </div>
 
