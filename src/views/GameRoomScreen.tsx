@@ -13,6 +13,7 @@ import {
   forfeitGame,
 } from '../services/gameService';
 import { awardGameResults } from '../services/userService';
+import { auth } from '../services/firebase';
 import { sounds } from '../services/soundEffects';
 import confetti from 'canvas-confetti';
 import {
@@ -48,12 +49,15 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   onExitRoom,
   onRematch,
 }) => {
+  const effectiveUid = auth.currentUser?.uid || user.uid;
   const [room, setRoom] = useState<GameRoom>(initialRoom);
   const [timeLeft, setTimeLeft] = useState<number>(10);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [hasAnswered, setHasAnswered] = useState<boolean>(false);
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
-  const [isHost, setIsHost] = useState<boolean>(initialRoom.hostId === user.uid);
+  const [isHost, setIsHost] = useState<boolean>(
+    initialRoom.hostId === effectiveUid || initialRoom.hostId === user.uid
+  );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
   const [chatInput, setChatInput] = useState<string>('');
@@ -86,13 +90,13 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const roundStartTimeRef = useRef<number>(Date.now());
   const activeRoundRef = useRef<number>(0);
   const isAdvancingRoundRef = useRef<boolean>(false);
-  const botAnswerTimerRef = useRef<NodeJS.Timeout | null>(null);
   const roundTransitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const guestFallbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Subscribe to real-time room updates and chat
   useEffect(() => {
-    setIsHost(room.hostId === user.uid);
+    const activeUid = auth.currentUser?.uid || user.uid;
+    setIsHost(room.hostId === activeUid || room.hostId === user.uid);
     const unsubRoom = subscribeToGameRoom(room.id, (updated) => {
       setRoom(updated);
       if (
@@ -123,7 +127,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         timerRef.current = null;
       }
       if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
-      if (botAnswerTimerRef.current) clearTimeout(botAnswerTimerRef.current);
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
     };
   }, [room.id]);
@@ -147,7 +150,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
             roundStartedAt: now,
             roundStartTime: now,
           }));
-          if (isHostRef.current || room.isBotOpponent) {
+          if (isHostRef.current) {
             syncRoomRoundStartTime(room.id, now);
           }
         }
@@ -174,7 +177,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         winnerId,
       }));
 
-      if (isHostRef.current || currentRoom.isBotOpponent) {
+      if (isHostRef.current) {
         advanceToNextRoundOrFinish(currentRoom.id, currentRoom);
       }
     } else {
@@ -196,7 +199,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         roundStartTime: now,
       }));
 
-      if (isHostRef.current || currentRoom.isBotOpponent) {
+      if (isHostRef.current) {
         advanceToNextRoundOrFinish(currentRoom.id, currentRoom);
       }
     }
@@ -226,7 +229,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     }, 2500);
 
     // Multiplayer Guest fallback: if Host dropped or lagged, Guest advances after buffer
-    if (!isHostRef.current && !roomRef.current.isBotOpponent) {
+    if (!isHostRef.current) {
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
       const currentRoundNum = roomRef.current.currentRound;
       guestFallbackTimeoutRef.current = setTimeout(() => {
@@ -245,7 +248,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         timerRef.current = null;
       }
       if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
-      if (botAnswerTimerRef.current) clearTimeout(botAnswerTimerRef.current);
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
       handleMatchFinished();
       return;
@@ -264,7 +266,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       timerRef.current = null;
     }
     if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
-    if (botAnswerTimerRef.current) clearTimeout(botAnswerTimerRef.current);
     if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
 
     // If current question has not loaded yet, wait for it
@@ -335,39 +336,11 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       }
     }, 100);
 
-    // Bot opponent answering simulation
-    if (room.isBotOpponent && !room.guestAnswer) {
-      const botDelay = 1800 + Math.random() * 1600;
-      botAnswerTimerRef.current = setTimeout(() => {
-        if (isAdvancingRoundRef.current) return;
-        const q = currentQ;
-        if (!q) return;
-
-        // Bot has ~80% accuracy
-        const isBotCorrect = Math.random() > 0.2;
-        const botAns = isBotCorrect
-          ? q.correctAnswer
-          : q.options.find((o) => o !== q.correctAnswer) || q.options[0];
-
-        const botPoints = isBotCorrect
-          ? Math.max(50, 100 + Math.floor((10000 - Math.min(botDelay, 10000)) / 100))
-          : 0;
-
-        setRoom((prev) => ({
-          ...prev,
-          guestAnswer: botAns,
-          guestAnswerTime: botDelay,
-          guestScore: (prev.guestScore || 0) + botPoints,
-        }));
-      }, botDelay);
-    }
-
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
-      if (botAnswerTimerRef.current) clearTimeout(botAnswerTimerRef.current);
       if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
     };
@@ -404,10 +377,11 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     });
 
     const isHostPlayer = isHostRef.current;
+    const activeUid = auth.currentUser?.uid || user.uid;
     if (isHostPlayer && !currentRoom.hostAnswer) {
-      submitPlayerAnswer(currentRoom.id, user.uid, fallbackAns, 10000, false, currentRoom);
+      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, 10000, false, currentRoom);
     } else if (!isHostPlayer && !currentRoom.guestAnswer) {
-      submitPlayerAnswer(currentRoom.id, user.uid, fallbackAns, 10000, false, currentRoom);
+      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, 10000, false, currentRoom);
     }
 
     setRoom((prev) => ({
@@ -454,31 +428,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       return copy;
     });
 
-    submitPlayerAnswer(room.id, user.uid, option, timeTaken, isCorrect, roomRef.current);
-
-    // If opponent is bot and hasn't answered yet, reply promptly
-    if (room.isBotOpponent && !room.guestAnswer) {
-      if (botAnswerTimerRef.current) clearTimeout(botAnswerTimerRef.current);
-      const quickDelay = 600 + Math.random() * 800;
-      botAnswerTimerRef.current = setTimeout(() => {
-        if (isAdvancingRoundRef.current) return;
-        if (!curQ) return;
-        const isBotCorrect = Math.random() > 0.25;
-        const botAns = isBotCorrect
-          ? curQ.correctAnswer
-          : curQ.options.find((o) => o !== curQ.correctAnswer) || curQ.options[0];
-        const botPoints = isBotCorrect
-          ? Math.max(50, 100 + Math.floor((10000 - Math.min(quickDelay, 10000)) / 100))
-          : 0;
-
-        setRoom((prev) => ({
-          ...prev,
-          guestAnswer: botAns,
-          guestAnswerTime: quickDelay,
-          guestScore: (prev.guestScore || 0) + botPoints,
-        }));
-      }, quickDelay);
-    }
+    const activeUid = auth.currentUser?.uid || user.uid;
+    submitPlayerAnswer(room.id, activeUid, option, timeTaken, isCorrect, roomRef.current);
   };
 
   const handleMatchFinished = async () => {

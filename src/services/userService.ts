@@ -61,6 +61,54 @@ export function calculateLevel(xp: number) {
   };
 }
 
+const DEFAULT_AVATAR_URL =
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80';
+
+function sanitizeProfileData<T extends Record<string, unknown>>(obj: T): T {
+  const cleaned: Record<string, unknown> = {};
+  Object.entries(obj).forEach(([key, value]) => {
+    if (value !== undefined) {
+      cleaned[key] = value;
+    }
+  });
+  return cleaned as T;
+}
+
+export function normalizeUserProfile(raw: Partial<UserProfile> | null | undefined, fallbackUid: string): UserProfile {
+  const resolvedUid =
+    raw?.uid ||
+    (raw as { id?: string } | undefined)?.id ||
+    auth.currentUser?.uid ||
+    fallbackUid;
+  const countryCode = raw?.countryCode || 'TN';
+  const countryInfo = getCountryByCode(countryCode);
+
+  return {
+    uid: resolvedUid,
+    username: raw?.username || `Explorer_${resolvedUid.slice(0, 4)}`,
+    email: raw?.email,
+    avatar: raw?.avatar || DEFAULT_AVATAR_URL,
+    countryCode,
+    countryName: raw?.countryName || countryInfo?.name || 'Tunisia',
+    countryFlag: raw?.countryFlag || countryInfo?.flag || '🇹🇳',
+    bio: raw?.bio || 'Passionate world traveler and quiz challenger!',
+    preferredLanguage: raw?.preferredLanguage || 'English',
+    age: raw?.age,
+    level: typeof raw?.level === 'number' ? raw.level : 1,
+    xp: typeof raw?.xp === 'number' ? raw.xp : 0,
+    coins: typeof raw?.coins === 'number' ? raw.coins : 100,
+    gamesPlayed: typeof raw?.gamesPlayed === 'number' ? raw.gamesPlayed : 0,
+    gamesWon: typeof raw?.gamesWon === 'number' ? raw.gamesWon : 0,
+    discoveredCountries: Array.isArray(raw?.discoveredCountries) ? raw.discoveredCountries : [countryCode],
+    unlockedBadges: Array.isArray(raw?.unlockedBadges) ? raw.unlockedBadges : [],
+    dailyStreak: typeof raw?.dailyStreak === 'number' ? raw.dailyStreak : 1,
+    lastDailyChallengeDate: raw?.lastDailyChallengeDate,
+    role: raw?.role || 'user',
+    createdAt: raw?.createdAt || new Date().toISOString(),
+    lastActiveAt: raw?.lastActiveAt || new Date().toISOString(),
+  };
+}
+
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   if (!uid) return null;
   if (uid.startsWith('guest_') || !auth.currentUser) {
@@ -68,8 +116,8 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
       try {
         const cached = localStorage.getItem('wc_cached_profile');
         if (cached) {
-          const parsed = JSON.parse(cached) as UserProfile;
-          if (parsed.uid === uid) return parsed;
+          const parsed = JSON.parse(cached) as Partial<UserProfile>;
+          return normalizeUserProfile(parsed, uid);
         }
       } catch {
         // ignore
@@ -77,11 +125,10 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     }
     return null;
   }
-  const path = `users/${uid}`;
   try {
     const snap = await getDoc(doc(db, 'users', uid));
     if (snap.exists()) {
-      return snap.data() as UserProfile;
+      return normalizeUserProfile(snap.data() as Partial<UserProfile>, snap.id || uid);
     }
     return null;
   } catch (error) {
@@ -89,7 +136,10 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     if (typeof window !== 'undefined') {
       try {
         const cached = localStorage.getItem('wc_cached_profile');
-        if (cached) return JSON.parse(cached) as UserProfile;
+        if (cached) {
+          const parsed = JSON.parse(cached) as Partial<UserProfile>;
+          return normalizeUserProfile(parsed, uid);
+        }
       } catch {
         // ignore
       }
@@ -100,12 +150,11 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 
 export function subscribeToUserProfile(uid: string, callback: (profile: UserProfile | null) => void) {
   if (!uid || uid.startsWith('guest_') || !auth.currentUser) return () => {};
-  const path = `users/${uid}`;
   return onSnapshot(
     doc(db, 'users', uid),
     (snap) => {
       if (snap.exists()) {
-        callback(snap.data() as UserProfile);
+        callback(normalizeUserProfile(snap.data() as Partial<UserProfile>, snap.id || uid));
       } else {
         callback(null);
       }
@@ -117,20 +166,22 @@ export function subscribeToUserProfile(uid: string, callback: (profile: UserProf
 }
 
 export async function createUserProfile(profile: UserProfile): Promise<void> {
-  if (!profile?.uid) return;
+  const normalized = normalizeUserProfile(profile, profile?.uid || auth.currentUser?.uid || '');
+  if (!normalized.uid) return;
+
+  const cleanProfile = sanitizeProfileData(normalized as unknown as Record<string, unknown>);
 
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem('wc_cached_profile', JSON.stringify(profile));
+      localStorage.setItem('wc_cached_profile', JSON.stringify(cleanProfile));
     } catch {
       // ignore
     }
   }
 
-  if (profile.uid.startsWith('guest_') || !auth.currentUser) return;
-  const path = `users/${profile.uid}`;
+  if (normalized.uid.startsWith('guest_') || !auth.currentUser) return;
   try {
-    await setDoc(doc(db, 'users', profile.uid), profile);
+    await setDoc(doc(db, 'users', normalized.uid), cleanProfile);
   } catch (error) {
     console.warn(`Could not write user profile to Firestore:`, error);
   }
@@ -138,6 +189,7 @@ export async function createUserProfile(profile: UserProfile): Promise<void> {
 
 export async function updateUserProfile(uid: string, updates: Partial<UserProfile>): Promise<void> {
   if (!uid) return;
+  const cleanUpdates = sanitizeProfileData(updates as Record<string, unknown>);
 
   // Optimistically update local cached profile so UI refreshes immediately
   if (typeof window !== 'undefined') {
@@ -145,8 +197,8 @@ export async function updateUserProfile(uid: string, updates: Partial<UserProfil
       const cached = localStorage.getItem('wc_cached_profile');
       if (cached) {
         const parsed = JSON.parse(cached);
-        const updated = { ...parsed, ...updates };
-        localStorage.setItem('wc_cached_profile', JSON.stringify(updated));
+        const updated = normalizeUserProfile({ ...parsed, ...cleanUpdates }, uid);
+        localStorage.setItem('wc_cached_profile', JSON.stringify(sanitizeProfileData(updated as unknown as Record<string, unknown>)));
       }
     } catch {
       // ignore
@@ -154,9 +206,8 @@ export async function updateUserProfile(uid: string, updates: Partial<UserProfil
   }
 
   if (uid.startsWith('guest_') || !auth.currentUser) return;
-  const path = `users/${uid}`;
   try {
-    await setDoc(doc(db, 'users', uid), updates, { merge: true });
+    await setDoc(doc(db, 'users', uid), cleanUpdates, { merge: true });
   } catch (error) {
     console.warn(`Could not update user profile in Firestore:`, error);
   }

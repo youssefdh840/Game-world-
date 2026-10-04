@@ -8,21 +8,22 @@ import {
   joinPrivateDuelRoom,
   listenToPrivateRoomHost,
 } from '../services/matchmakingService';
-import { getGameRoom, syncRoomRoundStartTime } from '../services/gameService';
+import { syncRoomRoundStartTime } from '../services/gameService';
+import { auth } from '../services/firebase';
 import { sounds } from '../services/soundEffects';
 import {
   Globe2,
   X,
   CheckCircle2,
-  Users,
-  User,
   KeyRound,
   Swords,
   Copy,
   Check,
   Loader2,
-  Sparkles,
 } from 'lucide-react';
+
+const DEFAULT_AVATAR =
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80';
 
 interface MatchmakingModalProps {
   isOpen: boolean;
@@ -58,19 +59,33 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
   const activePrivateRoomIdRef = useRef<string>('');
   const unsubRef = useRef<(() => void) | null>(null);
   const cdIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const hasCommencedRef = useRef<boolean>(false);
+
+  const safeUser: UserProfile = {
+    ...user,
+    uid: auth.currentUser?.uid || user?.uid || 'guest_player',
+    username: user?.username || auth.currentUser?.displayName || 'Explorer',
+    avatar: user?.avatar || auth.currentUser?.photoURL || DEFAULT_AVATAR,
+    countryCode: user?.countryCode || 'TN',
+    countryFlag: user?.countryFlag || '🇹🇳',
+  };
 
   // Cleanup helper
-  const cleanUpListeners = () => {
+  const cleanUpListeners = (deleteWaitingRoom: boolean = true) => {
     if (unsubRef.current) {
       unsubRef.current();
       unsubRef.current = null;
     }
     if (activeTicketIdRef.current) {
-      leaveMatchmakingQueue(activeTicketIdRef.current);
+      if (deleteWaitingRoom) {
+        leaveMatchmakingQueue(activeTicketIdRef.current);
+      }
       activeTicketIdRef.current = '';
     }
     if (activePrivateRoomIdRef.current) {
-      leaveMatchmakingQueue(activePrivateRoomIdRef.current);
+      if (deleteWaitingRoom) {
+        leaveMatchmakingQueue(activePrivateRoomIdRef.current);
+      }
       activePrivateRoomIdRef.current = '';
     }
     if (cdIntervalRef.current) {
@@ -81,8 +96,18 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
 
   // Helper to start the 3-2-1 match countdown
   const commenceMatch = (room: GameRoom, opponent: Partial<UserProfile>) => {
-    cleanUpListeners();
-    setMatchedOpponent(opponent);
+    if (hasCommencedRef.current) return;
+    hasCommencedRef.current = true;
+
+    cleanUpListeners(false);
+    setMatchedOpponent({
+      uid: opponent.uid || 'opponent',
+      username: opponent.username || 'Challenger',
+      avatar: opponent.avatar || DEFAULT_AVATAR,
+      countryCode: opponent.countryCode || 'UN',
+      countryFlag: opponent.countryFlag || '🌍',
+      countryName: opponent.countryName || 'Challenger',
+    });
     setStatusText(`Real challenger found: ${opponent.username || 'Opponent'}!`);
     sounds.playCorrect();
 
@@ -103,7 +128,8 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         room.status = 'playing';
 
         // Authoritative Host activates match in Firestore
-        if (room.hostId === user.uid) {
+        const currentUid = auth.currentUser?.uid || safeUser.uid;
+        if (room.hostId === currentUid || room.hostId === user.uid) {
           syncRoomRoundStartTime(room.id, now);
         }
 
@@ -112,10 +138,23 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     }, 1000);
   };
 
+  // Reset modal state when opened/closed
+  useEffect(() => {
+    if (!isOpen) {
+      hasCommencedRef.current = false;
+      setMatchedOpponent(null);
+      setCountdown(null);
+      setGeneratedCode('');
+      setInputCode('');
+      setCodeError('');
+    }
+  }, [isOpen]);
+
   // 1. Worldwide Queue Search (Real Players Only - Zero AI/Bots)
   useEffect(() => {
     if (!isOpen || tab !== 'queue') return;
 
+    hasCommencedRef.current = false;
     sounds.playPop();
     setStatusText('Searching for a real opponent...');
     setMatchedOpponent(null);
@@ -129,7 +168,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     let isCancelled = false;
 
     // Join the real Firestore queue
-    joinMatchmakingQueue(user, category, targetCountryCode)
+    joinMatchmakingQueue(safeUser, category, targetCountryCode)
       .then(({ roomId, matchedRoom }) => {
         if (isCancelled) {
           leaveMatchmakingQueue(roomId);
@@ -142,10 +181,10 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         if (matchedRoom) {
           const opp: Partial<UserProfile> = {
             uid: matchedRoom.hostId,
-            username: matchedRoom.hostUsername,
-            countryCode: matchedRoom.hostCountryCode,
-            countryFlag: matchedRoom.hostCountryFlag,
-            avatar: matchedRoom.hostAvatar,
+            username: matchedRoom.hostUsername || 'Challenger',
+            countryCode: matchedRoom.hostCountryCode || 'UN',
+            countryFlag: matchedRoom.hostCountryFlag || '🌍',
+            avatar: matchedRoom.hostAvatar || DEFAULT_AVATAR,
             countryName: 'Host',
           };
           commenceMatch(matchedRoom, opp);
@@ -157,10 +196,10 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
           if (isCancelled) return;
           const opp: Partial<UserProfile> = {
             uid: room.guestId,
-            username: room.guestUsername,
-            countryCode: room.guestCountryCode,
-            countryFlag: room.guestCountryFlag,
-            avatar: room.guestAvatar,
+            username: room.guestUsername || 'Challenger',
+            countryCode: room.guestCountryCode || 'UN',
+            countryFlag: room.guestCountryFlag || '🌍',
+            avatar: room.guestAvatar || DEFAULT_AVATAR,
             countryName: 'Guest',
           };
           commenceMatch(room, opp);
@@ -174,18 +213,21 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     return () => {
       isCancelled = true;
       clearInterval(timer);
-      cleanUpListeners();
+      if (!hasCommencedRef.current) {
+        cleanUpListeners(true);
+      }
     };
   }, [isOpen, tab]);
 
   // Handle Room Code Creation
   const handleCreateCodeRoom = async () => {
     try {
+      hasCommencedRef.current = false;
       setCodeLoading(true);
       setCodeError('');
-      cleanUpListeners();
+      cleanUpListeners(true);
 
-      const { room, roomCode } = await createPrivateDuelRoom(user, category);
+      const { room, roomCode } = await createPrivateDuelRoom(safeUser, category, targetCountryCode);
       setGeneratedCode(roomCode);
       activePrivateRoomIdRef.current = room.id;
       setStatusText(`Room created! Code: ${roomCode}`);
@@ -194,10 +236,10 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
       unsubRef.current = listenToPrivateRoomHost(room.id, (updatedRoom) => {
         const opp: Partial<UserProfile> = {
           uid: updatedRoom.guestId,
-          username: updatedRoom.guestUsername,
-          countryCode: updatedRoom.guestCountryCode,
-          countryFlag: updatedRoom.guestCountryFlag,
-          avatar: updatedRoom.guestAvatar,
+          username: updatedRoom.guestUsername || 'Friend',
+          countryCode: updatedRoom.guestCountryCode || 'UN',
+          countryFlag: updatedRoom.guestCountryFlag || '🌍',
+          avatar: updatedRoom.guestAvatar || DEFAULT_AVATAR,
           countryName: 'Friend',
         };
         commenceMatch(updatedRoom, opp);
@@ -211,19 +253,24 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
 
   // Handle Room Code Joining
   const handleJoinWithCode = async () => {
-    if (!inputCode.trim()) return;
+    const clean = inputCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (clean.length !== 6) {
+      setCodeError('Please enter a valid 6-character room code.');
+      return;
+    }
     try {
+      hasCommencedRef.current = false;
       setCodeLoading(true);
       setCodeError('');
-      cleanUpListeners();
+      cleanUpListeners(true);
 
-      const room = await joinPrivateDuelRoom(inputCode, user);
+      const room = await joinPrivateDuelRoom(clean, safeUser);
       const opp: Partial<UserProfile> = {
         uid: room.hostId,
-        username: room.hostUsername,
-        countryCode: room.hostCountryCode,
-        countryFlag: room.hostCountryFlag,
-        avatar: room.hostAvatar,
+        username: room.hostUsername || 'Host',
+        countryCode: room.hostCountryCode || 'UN',
+        countryFlag: room.hostCountryFlag || '🌍',
+        avatar: room.hostAvatar || DEFAULT_AVATAR,
         countryName: 'Host',
       };
       commenceMatch(room, opp);
@@ -300,119 +347,118 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
           </div>
         )}
 
-        {/* ----------------- TAB 1: WORLDWIDE QUEUE ----------------- */}
-        {tab === 'queue' && (
-          <div>
-            {!matchedOpponent ? (
-              <div className="my-8 relative flex flex-col items-center justify-center">
-                {/* Clean Loading Pulse & Spinner */}
-                <div className="relative flex items-center justify-center w-36 h-36">
-                  <div className="absolute w-36 h-36 rounded-full border border-indigo-500/20 animate-ping" />
-                  <div className="absolute w-28 h-28 rounded-full border border-rose-500/30 animate-pulse" />
-                  <div className="w-20 h-20 rounded-full bg-slate-800/80 border border-slate-700/80 flex items-center justify-center shadow-xl">
-                    <Loader2 className="w-10 h-10 text-indigo-400 animate-spin" />
-                  </div>
-                </div>
+        {/* ----------------- OPPONENT MATCHED SCREEN (QUEUE OR ROOM CODE) ----------------- */}
+        {matchedOpponent && (
+          <div className="my-6 animate-scale-up">
+            <div className="inline-flex items-center gap-1.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 px-3 py-1 rounded-full text-xs font-bold mb-4">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>OPPONENT FOUND!</span>
+            </div>
 
-                {/* Live Search Duration */}
-                <div className="mt-5 font-mono font-bold text-xs text-indigo-400 bg-slate-950 px-3 py-1 rounded-full border border-slate-800">
-                  Elapsed: {formatElapsed(elapsedSeconds)}
-                </div>
+            <div className="flex items-center justify-center gap-4">
+              {/* Player 1 */}
+              <div className="flex flex-col items-center">
+                <img
+                  src={safeUser.avatar}
+                  alt={safeUser.username}
+                  className="w-16 h-16 rounded-2xl object-cover ring-2 ring-indigo-500 shadow-md bg-slate-800"
+                />
+                <span className="text-xs font-extrabold text-white mt-1.5 truncate max-w-[80px]">
+                  {safeUser.username}
+                </span>
+                <span className="text-base">{safeUser.countryFlag}</span>
               </div>
-            ) : (
-              /* Opponent Found VS Screen - Only rendered once real match is established */
-              <div className="my-6 animate-scale-up">
-                <div className="inline-flex items-center gap-1.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 px-3 py-1 rounded-full text-xs font-bold mb-4">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>OPPONENT FOUND!</span>
-                </div>
 
-                <div className="flex items-center justify-center gap-4">
-                  {/* Player 1 */}
-                  <div className="flex flex-col items-center">
-                    <img
-                      src={user.avatar}
-                      alt={user.username}
-                      className="w-16 h-16 rounded-2xl object-cover ring-2 ring-indigo-500 shadow-md bg-slate-800"
-                    />
-                    <span className="text-xs font-extrabold text-white mt-1.5 truncate max-w-[80px]">
-                      {user.username}
-                    </span>
-                    <span className="text-base">{user.countryFlag}</span>
-                  </div>
+              {/* VS Badge */}
+              <div className="flex flex-col items-center">
+                <span className="w-10 h-10 rounded-full bg-rose-600 text-white font-black text-sm flex items-center justify-center shadow-lg">
+                  VS
+                </span>
+              </div>
 
-                  {/* VS Badge */}
-                  <div className="flex flex-col items-center">
-                    <span className="w-10 h-10 rounded-full bg-rose-600 text-white font-black text-sm flex items-center justify-center shadow-lg">
-                      VS
-                    </span>
-                  </div>
-
-                  {/* Established Opponent */}
-                  <div className="flex flex-col items-center">
-                    {matchedOpponent.avatar ? (
-                      <img
-                        src={matchedOpponent.avatar}
-                        alt={matchedOpponent.username || 'Opponent'}
-                        className="w-16 h-16 rounded-2xl object-cover ring-2 ring-rose-500 shadow-md bg-slate-800"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-500 to-amber-500 flex items-center justify-center text-white font-black text-xl ring-2 ring-rose-500 shadow-md">
-                        {matchedOpponent.username ? matchedOpponent.username.charAt(0).toUpperCase() : '?'}
-                      </div>
-                    )}
-                    <span className="text-xs font-extrabold text-white mt-1.5 truncate max-w-[80px]">
-                      {matchedOpponent.username || 'Opponent'}
-                    </span>
-                    <span className="text-base">{matchedOpponent.countryFlag || '🌐'}</span>
-                  </div>
-                </div>
-
-                {/* Countdown 3-2-1 */}
-                {countdown !== null && (
-                  <div className="mt-5">
-                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-r from-amber-500 to-rose-500 text-white font-black text-2xl shadow-lg animate-bounce">
-                      {countdown}
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-1 font-bold">STARTING MATCH...</p>
+              {/* Established Opponent */}
+              <div className="flex flex-col items-center">
+                {matchedOpponent.avatar ? (
+                  <img
+                    src={matchedOpponent.avatar}
+                    alt={matchedOpponent.username || 'Opponent'}
+                    className="w-16 h-16 rounded-2xl object-cover ring-2 ring-rose-500 shadow-md bg-slate-800"
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-500 to-amber-500 flex items-center justify-center text-white font-black text-xl ring-2 ring-rose-500 shadow-md">
+                    {matchedOpponent.username ? matchedOpponent.username.charAt(0).toUpperCase() : '?'}
                   </div>
                 )}
+                <span className="text-xs font-extrabold text-white mt-1.5 truncate max-w-[80px]">
+                  {matchedOpponent.username || 'Opponent'}
+                </span>
+                <span className="text-base">{matchedOpponent.countryFlag || '🌐'}</span>
+              </div>
+            </div>
+
+            {/* Countdown 3-2-1 */}
+            {countdown !== null && (
+              <div className="mt-5">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-r from-amber-500 to-rose-500 text-white font-black text-2xl shadow-lg animate-bounce">
+                  {countdown}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1 font-bold">STARTING MATCH...</p>
               </div>
             )}
 
-            <h3 className="text-lg font-black text-white">
-              {!matchedOpponent ? 'Searching for a real opponent...' : statusText}
-            </h3>
+            <h3 className="text-lg font-black text-white mt-4">{statusText}</h3>
             <p className="text-xs text-slate-400 mt-1">
-              {!matchedOpponent
-                ? 'Waiting for another real player to join the queue...'
-                : 'Connecting to synchronized live duel session!'}
+              Connecting to synchronized live duel session!
+            </p>
+          </div>
+        )}
+
+        {/* ----------------- TAB 1: WORLDWIDE QUEUE ----------------- */}
+        {tab === 'queue' && !matchedOpponent && (
+          <div>
+            <div className="my-8 relative flex flex-col items-center justify-center">
+              {/* Clean Loading Pulse & Spinner */}
+              <div className="relative flex items-center justify-center w-36 h-36">
+                <div className="absolute w-36 h-36 rounded-full border border-indigo-500/20 animate-ping" />
+                <div className="absolute w-28 h-28 rounded-full border border-rose-500/30 animate-pulse" />
+                <div className="w-20 h-20 rounded-full bg-slate-800/80 border border-slate-700/80 flex items-center justify-center shadow-xl">
+                  <Loader2 className="w-10 h-10 text-indigo-400 animate-spin" />
+                </div>
+              </div>
+
+              {/* Live Search Duration */}
+              <div className="mt-5 font-mono font-bold text-xs text-indigo-400 bg-slate-950 px-3 py-1 rounded-full border border-slate-800">
+                Elapsed: {formatElapsed(elapsedSeconds)}
+              </div>
+            </div>
+
+            <h3 className="text-lg font-black text-white">Searching for a real opponent...</h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Waiting for another real player to join the queue...
             </p>
 
             {/* Quick Actions during search */}
-            {!matchedOpponent && (
-              <div className="mt-6 space-y-2.5">
-                <button
-                  onClick={() => {
-                    sounds.playPop();
-                    cleanUpListeners();
-                    onClose();
-                  }}
-                  className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs active:scale-98 transition-all cursor-pointer"
-                >
-                  Cancel Search
-                </button>
-                <button
-                  onClick={() => {
-                    sounds.playPop();
-                    setTab('code');
-                  }}
-                  className="w-full py-2 text-indigo-400 hover:text-indigo-300 font-bold text-xs cursor-pointer"
-                >
-                  Have a friend? Play with Room Code &rarr;
-                </button>
-              </div>
-            )}
+            <div className="mt-6 space-y-2.5">
+              <button
+                onClick={() => {
+                  sounds.playPop();
+                  cleanUpListeners(true);
+                  onClose();
+                }}
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs active:scale-98 transition-all cursor-pointer"
+              >
+                Cancel Search
+              </button>
+              <button
+                onClick={() => {
+                  sounds.playPop();
+                  setTab('code');
+                }}
+                className="w-full py-2 text-indigo-400 hover:text-indigo-300 font-bold text-xs cursor-pointer"
+              >
+                Have a friend? Play with Room Code &rarr;
+              </button>
+            </div>
           </div>
         )}
 

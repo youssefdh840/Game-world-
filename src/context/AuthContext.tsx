@@ -17,6 +17,7 @@ import {
   createUserProfile,
   subscribeToUserProfile,
   updateUserProfile,
+  normalizeUserProfile,
 } from '../services/userService';
 import { COUNTRIES } from '../services/countryData';
 
@@ -91,15 +92,19 @@ function formatAuthError(err: unknown): Error {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(() => {
+    const defaultFallbackUid = 'guest_' + Math.random().toString(36).substring(2, 8);
     if (typeof window !== 'undefined') {
       try {
         const cached = localStorage.getItem('wc_cached_profile');
-        if (cached) return JSON.parse(cached);
+        if (cached) {
+          const parsed = JSON.parse(cached) as Partial<UserProfile>;
+          return normalizeUserProfile(parsed, auth.currentUser?.uid || parsed?.uid || defaultFallbackUid);
+        }
       } catch {
         // ignore
       }
     }
-    return createFallbackProfile();
+    return createFallbackProfile(defaultFallbackUid);
   });
   const [loading, setLoading] = useState(false);
 
@@ -116,9 +121,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const profile = await getUserProfile(user.uid);
           if (profile && isMounted) {
-            setUserProfile(profile);
+            const syncedProfile: UserProfile = { ...profile, uid: user.uid };
+            setUserProfile(syncedProfile);
             try {
-              localStorage.setItem('wc_cached_profile', JSON.stringify(profile));
+              localStorage.setItem('wc_cached_profile', JSON.stringify(syncedProfile));
             } catch {
               // ignore
             }
@@ -128,7 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const newProf: UserProfile = {
               uid: user.uid,
               username: user.displayName || `Explorer_${user.uid.slice(0, 4)}`,
-              email: user.email || undefined,
+              ...(user.email ? { email: user.email } : {}),
               avatar: user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80',
               countryCode: defaultCountry.code,
               countryName: defaultCountry.name,
@@ -161,9 +167,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Live subscription to profile updates (XP, coins, level)
           unsubProfile = subscribeToUserProfile(user.uid, (p) => {
             if (p && isMounted) {
-              setUserProfile(p);
+              const synced: UserProfile = { ...p, uid: user.uid };
+              setUserProfile(synced);
               try {
-                localStorage.setItem('wc_cached_profile', JSON.stringify(p));
+                localStorage.setItem('wc_cached_profile', JSON.stringify(synced));
               } catch {
                 // ignore
               }

@@ -2,6 +2,7 @@ import {
   doc,
   getDoc,
   updateDoc,
+  deleteDoc,
   onSnapshot,
   collection,
   addDoc,
@@ -11,7 +12,7 @@ import {
   increment,
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
-import { GameRoom, ChatMessage, ReportItem, Question } from '../types/game';
+import { GameRoom, ChatMessage, ReportItem } from '../types/game';
 import {
   fetchDynamicGameQuestions,
   recordQuestionsAnsweredInSession,
@@ -26,12 +27,22 @@ export {
   type QuestionFilterOptions,
 };
 
+function sanitizeUpdates<T extends Record<string, unknown>>(updates: T): T {
+  const cleaned: Record<string, unknown> = {};
+  Object.entries(updates).forEach(([key, value]) => {
+    if (value !== undefined) {
+      cleaned[key] = value;
+    }
+  });
+  return cleaned as T;
+}
+
 export async function getGameRoom(roomId: string): Promise<GameRoom | null> {
-  const path = `gameRooms/${roomId}`;
+  if (!roomId) return null;
   try {
     const snap = await getDoc(doc(db, 'gameRooms', roomId));
     if (snap.exists()) {
-      return snap.data() as GameRoom;
+      return { ...(snap.data() as GameRoom), id: snap.id };
     }
     return null;
   } catch (error) {
@@ -45,15 +56,14 @@ export function subscribeToGameRoom(
   onUpdate: (room: GameRoom) => void,
   onError?: (err: unknown) => void
 ) {
-  if (roomId.startsWith('room_bot_')) {
+  if (!roomId || roomId.startsWith('room_bot_')) {
     return () => {};
   }
-  const path = `gameRooms/${roomId}`;
   return onSnapshot(
     doc(db, 'gameRooms', roomId),
     (snap) => {
       if (snap.exists()) {
-        onUpdate(snap.data() as GameRoom);
+        onUpdate({ ...(snap.data() as GameRoom), id: snap.id });
       }
     },
     (error) => {
@@ -71,11 +81,11 @@ export async function submitPlayerAnswer(
   isCorrect: boolean,
   room: GameRoom
 ) {
-  if (roomId.startsWith('room_bot_')) {
+  if (!roomId || roomId.startsWith('room_bot_')) {
     return;
   }
-  const path = `gameRooms/${roomId}`;
-  const isHost = room.hostId === userId;
+  const activeUid = auth.currentUser?.uid || userId;
+  const isHost = room.hostId === activeUid || room.hostId === userId;
   const pointsEarned = isCorrect
     ? Math.max(50, 100 + Math.floor((10000 - Math.min(timeTakenMs, 10000)) / 100))
     : 0;
@@ -83,14 +93,14 @@ export async function submitPlayerAnswer(
   const updates: Record<string, unknown> = {};
 
   if (isHost) {
-    updates.hostAnswer = answer;
-    updates.hostAnswerTime = timeTakenMs;
+    updates.hostAnswer = answer ?? '';
+    updates.hostAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : 10000;
     if (pointsEarned > 0) {
       updates.hostScore = increment(pointsEarned);
     }
   } else {
-    updates.guestAnswer = answer;
-    updates.guestAnswerTime = timeTakenMs;
+    updates.guestAnswer = answer ?? '';
+    updates.guestAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : 10000;
     if (pointsEarned > 0) {
       updates.guestScore = increment(pointsEarned);
     }
@@ -98,7 +108,7 @@ export async function submitPlayerAnswer(
   updates.updatedAt = new Date().toISOString();
 
   try {
-    await updateDoc(doc(db, 'gameRooms', roomId), updates);
+    await updateDoc(doc(db, 'gameRooms', roomId), sanitizeUpdates(updates));
   } catch (error) {
     console.warn(`Could not update player answer (${roomId}):`, error);
   }
@@ -108,10 +118,9 @@ export async function advanceToNextRoundOrFinish(
   roomId: string,
   room: GameRoom
 ) {
-  if (roomId.startsWith('room_bot_')) {
+  if (!roomId || roomId.startsWith('room_bot_')) {
     return;
   }
-  const path = `gameRooms/${roomId}`;
   const roomDocRef = doc(db, 'gameRooms', roomId);
 
   try {
@@ -131,16 +140,16 @@ export async function advanceToNextRoundOrFinish(
       // Game completed! Determine winner from latest scores
       let winnerId: string | 'tie' = 'tie';
       if ((currentData.hostScore || 0) > (currentData.guestScore || 0)) {
-        winnerId = currentData.hostId;
+        winnerId = currentData.hostId || 'tie';
       } else if ((currentData.guestScore || 0) > (currentData.hostScore || 0)) {
-        winnerId = currentData.guestId;
+        winnerId = currentData.guestId || 'tie';
       }
 
-      const updates: Partial<GameRoom> = {
+      const updates = sanitizeUpdates({
         status: 'finished',
         winnerId,
         updatedAt: new Date().toISOString(),
-      };
+      });
       await updateDoc(roomDocRef, updates);
       return;
     }
@@ -148,9 +157,9 @@ export async function advanceToNextRoundOrFinish(
     // Move to next round
     const nextQuestion = currentData.questions ? currentData.questions[nextRound - 1] : undefined;
     const now = Date.now();
-    const updates: Partial<GameRoom> = {
+    const updates = sanitizeUpdates({
       currentRound: nextRound,
-      currentQuestion: nextQuestion,
+      ...(nextQuestion ? { currentQuestion: nextQuestion } : {}),
       status: 'playing',
       hostAnswer: null,
       hostAnswerTime: null,
@@ -159,7 +168,7 @@ export async function advanceToNextRoundOrFinish(
       roundStartedAt: now,
       roundStartTime: now,
       updatedAt: new Date().toISOString(),
-    };
+    });
 
     await updateDoc(roomDocRef, updates);
   } catch (error) {
@@ -168,13 +177,17 @@ export async function advanceToNextRoundOrFinish(
 }
 
 export async function syncRoomRoundStartTime(roomId: string, startTime: number) {
-  if (roomId.startsWith('room_bot_')) return;
+  if (!roomId || roomId.startsWith('room_bot_')) return;
   try {
-    await updateDoc(doc(db, 'gameRooms', roomId), {
-      roundStartTime: startTime,
-      roundStartedAt: startTime,
-      updatedAt: new Date().toISOString(),
-    });
+    await updateDoc(
+      doc(db, 'gameRooms', roomId),
+      sanitizeUpdates({
+        status: 'playing',
+        roundStartTime: startTime,
+        roundStartedAt: startTime,
+        updatedAt: new Date().toISOString(),
+      })
+    );
   } catch (err) {
     console.warn(`Could not sync roundStartTime for ${roomId}:`, err);
   }
@@ -185,17 +198,21 @@ export async function forfeitGame(
   forfeitingUserId: string,
   currentRoom: GameRoom
 ) {
-  if (roomId.startsWith('room_bot_')) return;
-  const isHost = currentRoom.hostId === forfeitingUserId;
+  if (!roomId || roomId.startsWith('room_bot_')) return;
+  const activeUid = auth.currentUser?.uid || forfeitingUserId || 'unknown';
+  const isHost = currentRoom.hostId === activeUid || currentRoom.hostId === forfeitingUserId;
   const winnerId = isHost ? currentRoom.guestId : currentRoom.hostId;
   try {
-    await updateDoc(doc(db, 'gameRooms', roomId), {
-      status: 'finished',
-      winnerId: winnerId || 'tie',
-      forfeitBy: forfeitingUserId,
-      abandonedBy: forfeitingUserId,
-      updatedAt: new Date().toISOString(),
-    });
+    await updateDoc(
+      doc(db, 'gameRooms', roomId),
+      sanitizeUpdates({
+        status: 'finished',
+        winnerId: winnerId || 'tie',
+        forfeitBy: activeUid,
+        abandonedBy: activeUid,
+        updatedAt: new Date().toISOString(),
+      })
+    );
   } catch (err) {
     console.warn(`Could not record game forfeit (${roomId}):`, err);
   }

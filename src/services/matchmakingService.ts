@@ -10,9 +10,75 @@ import {
   getDoc,
   updateDoc,
 } from 'firebase/firestore';
+import { signInAnonymously } from 'firebase/auth';
 import { db, auth } from './firebase';
 import { UserProfile, GameCategory, GameRoom } from '../types/game';
 import { fetchDynamicGameQuestions } from './questionService';
+
+const DEFAULT_AVATAR =
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80';
+
+/**
+ * Strips any `undefined` properties from an object before passing to Firestore `setDoc` or `updateDoc`.
+ */
+function sanitizeFirestorePayload<T extends Record<string, unknown>>(payload: T): T {
+  const cleaned: Record<string, unknown> = {};
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value !== undefined) {
+      cleaned[key] = value;
+    }
+  });
+  return cleaned as T;
+}
+
+/**
+ * Ensures Firebase Auth has an active user and returns a complete, non-undefined player identity.
+ */
+async function ensurePlayerIdentity(user?: Partial<UserProfile>): Promise<{
+  uid: string;
+  username: string;
+  avatar: string;
+  countryCode: string;
+  countryFlag: string;
+  level: number;
+}> {
+  if (!auth.currentUser) {
+    try {
+      await signInAnonymously(auth);
+    } catch (err) {
+      console.warn('Anonymous auth fallback notice:', err);
+    }
+  }
+
+  const uid =
+    auth.currentUser?.uid ||
+    user?.uid ||
+    (user as { id?: string } | undefined)?.id ||
+    `player_${Date.now().toString(36)}`;
+
+  const username =
+    (user?.username && user.username.trim()) ||
+    auth.currentUser?.displayName ||
+    `Explorer_${uid.slice(0, 4)}`;
+
+  const avatar =
+    (user?.avatar && user.avatar.trim()) ||
+    auth.currentUser?.photoURL ||
+    DEFAULT_AVATAR;
+
+  const countryCode = (user?.countryCode && user.countryCode.trim()) || 'TN';
+  const countryFlag = (user?.countryFlag && user.countryFlag.trim()) || '🇹🇳';
+  const level = typeof user?.level === 'number' && !isNaN(user.level) ? user.level : 1;
+
+  return {
+    uid,
+    username,
+    avatar,
+    countryCode,
+    countryFlag,
+    level,
+  };
+}
 
 export interface MatchTicket {
   userId: string;
@@ -40,6 +106,7 @@ export async function joinMatchmakingQueue(
   preferredCategory: GameCategory | 'mixed' = 'mixed',
   targetCountryCode?: string
 ): Promise<JoinQueueResult> {
+  const player = await ensurePlayerIdentity(user);
   const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
 
   // 1. Check if another real player already has an open waiting room in gameRooms
@@ -52,9 +119,9 @@ export async function joinMatchmakingQueue(
 
     // Find a valid waiting room created by another real player (not ourselves, not already joined, not expired)
     const openRooms = snap.docs
-      .map((d) => d.data() as GameRoom)
+      .map((d) => ({ ...(d.data() as GameRoom), id: d.id }))
       .filter((r) => {
-        if (!r.id || !r.hostId || r.hostId === user.uid) return false;
+        if (!r.id || !r.hostId || r.hostId === player.uid) return false;
         if (r.guestId && r.guestId !== '') return false;
         const createdMs = new Date(r.createdAt).getTime();
         return !isNaN(createdMs) && createdMs >= threeMinutesAgo;
@@ -65,22 +132,22 @@ export async function joinMatchmakingQueue(
       const waitingRoom = openRooms[0];
       const now = Date.now();
 
-      const updates: Partial<GameRoom> = {
-        guestId: user.uid,
-        guestUsername: user.username,
-        guestCountryCode: user.countryCode,
-        guestCountryFlag: user.countryFlag,
-        guestAvatar: user.avatar,
+      const updates: Partial<GameRoom> = sanitizeFirestorePayload({
+        guestId: player.uid,
+        guestUsername: player.username,
+        guestCountryCode: player.countryCode,
+        guestCountryFlag: player.countryFlag,
+        guestAvatar: player.avatar,
         guestScore: 0,
         guestReady: true,
-        status: 'starting',
+        status: 'starting' as const,
         roundStartedAt: now,
         roundStartTime: now,
         updatedAt: new Date().toISOString(),
-      };
+      });
 
       // Join the room as guest and advance status to 'starting'
-      await updateDoc(doc(db, 'gameRooms', waitingRoom.id), updates);
+      await updateDoc(doc(db, 'gameRooms', waitingRoom.id), updates as Record<string, unknown>);
 
       const matchedRoom: GameRoom = { ...waitingRoom, ...updates };
 
@@ -103,17 +170,17 @@ export async function joinMatchmakingQueue(
     count: 5,
     category: preferredCategory,
     countryCode: targetCountryCode,
-    userLevel: user.level,
+    userLevel: player.level,
   });
 
   const now = Date.now();
-  const roomData: GameRoom = {
+  const roomData: GameRoom = sanitizeFirestorePayload({
     id: roomId,
-    hostId: user.uid,
-    hostUsername: user.username,
-    hostCountryCode: user.countryCode,
-    hostCountryFlag: user.countryFlag,
-    hostAvatar: user.avatar,
+    hostId: player.uid,
+    hostUsername: player.username,
+    hostCountryCode: player.countryCode,
+    hostCountryFlag: player.countryFlag,
+    hostAvatar: player.avatar,
     hostScore: 0,
     hostReady: true,
 
@@ -126,8 +193,8 @@ export async function joinMatchmakingQueue(
     guestReady: false,
 
     gameMode: preferredCategory,
-    targetCountryCode,
-    status: 'waiting',
+    ...(targetCountryCode ? { targetCountryCode } : {}),
+    status: 'waiting' as const,
     currentRound: 1,
     totalRounds: questions.length,
     questionIds: questions.map((q) => q.id),
@@ -138,7 +205,7 @@ export async function joinMatchmakingQueue(
     isBotOpponent: false, // REAL PLAYERS ONLY
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-  };
+  }) as unknown as GameRoom;
 
   try {
     await setDoc(doc(db, 'gameRooms', roomId), roomData);
@@ -165,8 +232,8 @@ export function listenToMatchmakingRoom(
     doc(db, 'gameRooms', roomId),
     (snap) => {
       if (snap.exists()) {
-        const room = snap.data() as GameRoom;
-        if (room.guestId && room.status === 'starting') {
+        const room = { ...(snap.data() as GameRoom), id: snap.id };
+        if (room.guestId && (room.status === 'starting' || room.status === 'playing')) {
           onMatched(room);
         }
       }
@@ -185,8 +252,8 @@ export const listenToMatchmakingTicket = (
   return onSnapshot(doc(db, 'gameRooms', roomId), (snap) => {
     if (snap.exists()) {
       const room = snap.data() as GameRoom;
-      if (room.guestId && room.status === 'starting') {
-        onMatched(room.id);
+      if (room.guestId && (room.status === 'starting' || room.status === 'playing')) {
+        onMatched(room.id || snap.id);
       }
     }
   });
@@ -224,24 +291,27 @@ function generateRoomCode(): string {
 
 export async function createPrivateDuelRoom(
   user: UserProfile,
-  preferredCategory: GameCategory | 'mixed' = 'mixed'
+  preferredCategory: GameCategory | 'mixed' = 'mixed',
+  targetCountryCode?: string
 ): Promise<{ room: GameRoom; roomCode: string }> {
+  const player = await ensurePlayerIdentity(user);
   const roomCode = generateRoomCode();
   const roomId = `room_code_${roomCode}`;
 
   const questions = await fetchDynamicGameQuestions({
     count: 5,
     category: preferredCategory,
-    userLevel: user.level,
+    countryCode: targetCountryCode,
+    userLevel: player.level,
   });
 
-  const roomData: GameRoom = {
+  const roomData: GameRoom = sanitizeFirestorePayload({
     id: roomId,
-    hostId: user.uid,
-    hostUsername: user.username,
-    hostCountryCode: user.countryCode,
-    hostCountryFlag: user.countryFlag,
-    hostAvatar: user.avatar,
+    hostId: player.uid,
+    hostUsername: player.username,
+    hostCountryCode: player.countryCode,
+    hostCountryFlag: player.countryFlag,
+    hostAvatar: player.avatar,
     hostScore: 0,
     hostReady: true,
 
@@ -254,7 +324,8 @@ export async function createPrivateDuelRoom(
     guestReady: false,
 
     gameMode: preferredCategory,
-    status: 'waiting',
+    ...(targetCountryCode ? { targetCountryCode } : {}),
+    status: 'waiting' as const,
     currentRound: 1,
     totalRounds: questions.length,
     questionIds: questions.map((q) => q.id),
@@ -265,7 +336,7 @@ export async function createPrivateDuelRoom(
     isBotOpponent: false, // NO BOTS
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-  };
+  }) as unknown as GameRoom;
 
   await setDoc(doc(db, 'gameRooms', roomId), roomData);
   return { room: roomData, roomCode };
@@ -276,6 +347,11 @@ export async function joinPrivateDuelRoom(
   user: UserProfile
 ): Promise<GameRoom> {
   const cleanCode = roomCodeInput.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (cleanCode.length !== 6) {
+    throw new Error('Please enter a valid 6-character room code.');
+  }
+
+  const player = await ensurePlayerIdentity(user);
   const roomId = `room_code_${cleanCode}`;
 
   const roomDoc = await getDoc(doc(db, 'gameRooms', roomId));
@@ -283,30 +359,37 @@ export async function joinPrivateDuelRoom(
     throw new Error(`Room code "${cleanCode}" not found. Please double-check with your friend.`);
   }
 
-  const currentRoom = roomDoc.data() as GameRoom;
+  const currentRoom = { ...(roomDoc.data() as GameRoom), id: roomDoc.id };
   if (currentRoom.status === 'finished') {
     throw new Error('This game match has already finished.');
   }
 
-  if (currentRoom.hostId === user.uid) {
-    throw new Error("You are the host of this room. Waiting for another real player to join!");
+  if (currentRoom.hostId === player.uid) {
+    throw new Error('You are the host of this room. Waiting for another real player to join!');
   }
 
-  // Join as guest
-  const updates: Partial<GameRoom> = {
-    guestId: user.uid,
-    guestUsername: user.username,
-    guestCountryCode: user.countryCode,
-    guestCountryFlag: user.countryFlag,
-    guestAvatar: user.avatar,
-    guestReady: true,
-    status: 'starting',
-    roundStartedAt: Date.now(),
-    roundStartTime: Date.now(),
-    updatedAt: new Date().toISOString(),
-  };
+  if (currentRoom.guestId && currentRoom.guestId !== '' && currentRoom.guestId !== player.uid) {
+    throw new Error('This room is already full.');
+  }
 
-  await updateDoc(doc(db, 'gameRooms', roomId), updates);
+  const now = Date.now();
+
+  // Join as guest — every field is guaranteed to be defined
+  const updates: Partial<GameRoom> = sanitizeFirestorePayload({
+    guestId: player.uid,
+    guestUsername: player.username,
+    guestCountryCode: player.countryCode,
+    guestCountryFlag: player.countryFlag,
+    guestAvatar: player.avatar,
+    guestScore: 0,
+    guestReady: true,
+    status: 'starting' as const,
+    roundStartedAt: now,
+    roundStartTime: now,
+    updatedAt: new Date().toISOString(),
+  });
+
+  await updateDoc(doc(db, 'gameRooms', roomId), updates as Record<string, unknown>);
   return { ...currentRoom, ...updates };
 }
 
@@ -318,8 +401,8 @@ export function listenToPrivateRoomHost(
     doc(db, 'gameRooms', roomId),
     (snap) => {
       if (snap.exists()) {
-        const room = snap.data() as GameRoom;
-        if (room.guestId && room.status === 'starting') {
+        const room = { ...(snap.data() as GameRoom), id: snap.id };
+        if (room.guestId && (room.status === 'starting' || room.status === 'playing')) {
           onGuestJoined(room);
         }
       }
