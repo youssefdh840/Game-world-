@@ -47,26 +47,26 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
   const rest = displayPlayers.slice(3);
 
   return (
-    <div className="space-y-5 pb-24 animate-fade-in">
+    <div className="max-w-3xl mx-auto space-y-6 sm:space-y-7 pb-8 animate-fade-in">
       {/* Header */}
-      <div className="text-center">
-        <div className="w-14 h-14 mx-auto rounded-3xl bg-gradient-to-tr from-amber-400 via-yellow-500 to-amber-600 flex items-center justify-center text-3xl shadow-xl shadow-yellow-500/20 mb-2">
+      <div className="text-center pt-1">
+        <div className="w-15 h-15 sm:w-16 sm:h-16 mx-auto rounded-3xl bg-gradient-to-tr from-amber-400 via-yellow-500 to-amber-600 flex items-center justify-center text-3xl shadow-xl shadow-yellow-500/20 mb-2.5">
           🏆
         </div>
-        <h2 className="text-2xl font-black text-white tracking-tight">World Leaderboard</h2>
-        <p className="text-xs text-slate-400 mt-0.5">
+        <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">World Leaderboard</h2>
+        <p className="text-xs sm:text-sm text-slate-400 mt-1">
           Top cultural champions and globetrotters worldwide
         </p>
       </div>
 
       {/* Tabs Switcher: Global, Weekly, Country */}
-      <div className="flex bg-slate-900 border border-slate-800 p-1 rounded-2xl text-xs font-bold">
+      <div className="flex bg-slate-900 border border-slate-800 p-1.5 rounded-2xl text-xs sm:text-sm font-bold">
         <button
           onClick={() => {
             sounds.playPop();
             setBoardType('global');
           }}
-          className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 py-2.5 rounded-xl transition-all cursor-pointer ${
             boardType === 'global'
               ? 'bg-indigo-600 text-white shadow-md'
               : 'text-slate-400 hover:text-white'
@@ -79,7 +79,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
             sounds.playPop();
             setBoardType('weekly');
           }}
-          className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 py-2.5 rounded-xl transition-all cursor-pointer ${
             boardType === 'weekly'
               ? 'bg-indigo-600 text-white shadow-md'
               : 'text-slate-400 hover:text-white'
@@ -92,7 +92,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
             sounds.playPop();
             setBoardType('country');
           }}
-          className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 py-2.5 rounded-xl transition-all cursor-pointer ${
             boardType === 'country'
               ? 'bg-indigo-600 text-white shadow-md'
               : 'text-slate-400 hover:text-white'
@@ -104,69 +104,69 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
 
       {/* Top 3 Podium Visual */}
       {top3.length >= 3 && (
-        <div className="pt-6 pb-2 px-2 flex items-end justify-center gap-2">
+        <div className="pt-6 pb-2 px-2 sm:px-6 flex items-end justify-center gap-3 sm:gap-5">
           {/* 2nd Place (Silver) */}
           <div className="flex-1 flex flex-col items-center">
-            <div className="relative mb-2">
+            <div className="relative mb-2.5">
               <img
                 src={top3[1].avatar}
                 alt={top3[1].username}
-                className="w-14 h-14 rounded-2xl object-cover ring-2 ring-slate-400 shadow-md bg-slate-800"
+                className="w-15 h-15 sm:w-18 sm:h-18 rounded-2xl object-cover ring-2 ring-slate-400 shadow-md bg-slate-800"
               />
-              <span className="absolute -top-2 -right-1 text-base">🥈</span>
-              <span className="absolute -bottom-1 -left-1 text-xs">{top3[1].countryFlag}</span>
+              <span className="absolute -top-2 -right-1 text-base sm:text-lg">🥈</span>
+              <span className="absolute -bottom-1 -left-1 text-xs sm:text-sm">{top3[1].countryFlag}</span>
             </div>
-            <span className="font-extrabold text-white text-xs truncate max-w-[85px]">
+            <span className="font-extrabold text-white text-xs sm:text-sm truncate max-w-[95px] sm:max-w-[140px]">
               {top3[1].username}
             </span>
-            <span className="font-mono text-[10px] text-slate-300 font-bold">
+            <span className="font-mono text-[11px] sm:text-xs text-slate-300 font-bold mt-0.5">
               {top3[1].xp.toLocaleString()} XP
             </span>
-            <div className="w-full h-16 bg-slate-800/80 border-t-2 border-slate-400 rounded-t-2xl mt-2 flex items-center justify-center font-black text-slate-400 text-sm">
+            <div className="w-full h-16 sm:h-20 bg-slate-800/80 border-t-2 border-slate-400 rounded-t-2xl mt-2.5 flex items-center justify-center font-black text-slate-400 text-base">
               2
             </div>
           </div>
 
           {/* 1st Place (Gold) */}
           <div className="flex-1 flex flex-col items-center -mt-4">
-            <div className="relative mb-2">
+            <div className="relative mb-2.5">
               <img
                 src={top3[0].avatar}
                 alt={top3[0].username}
-                className="w-18 h-18 rounded-2xl object-cover ring-4 ring-yellow-400 shadow-xl shadow-yellow-500/20 bg-slate-800"
+                className="w-18 h-18 sm:w-22 sm:h-22 rounded-2xl object-cover ring-4 ring-yellow-400 shadow-xl shadow-yellow-500/20 bg-slate-800"
               />
               <Crown className="w-6 h-6 text-yellow-400 fill-yellow-400 absolute -top-4 left-1/2 -translate-x-1/2" />
-              <span className="absolute -bottom-1 -left-1 text-xs">{top3[0].countryFlag}</span>
+              <span className="absolute -bottom-1 -left-1 text-xs sm:text-sm">{top3[0].countryFlag}</span>
             </div>
-            <span className="font-extrabold text-white text-sm truncate max-w-[95px]">
+            <span className="font-extrabold text-white text-sm sm:text-base truncate max-w-[105px] sm:max-w-[160px]">
               {top3[0].username}
             </span>
-            <span className="font-mono text-xs text-yellow-300 font-black">
+            <span className="font-mono text-xs sm:text-sm text-yellow-300 font-black mt-0.5">
               {top3[0].xp.toLocaleString()} XP
             </span>
-            <div className="w-full h-22 bg-gradient-to-t from-yellow-500/20 to-yellow-500/40 border-t-2 border-yellow-400 rounded-t-2xl mt-2 flex items-center justify-center font-black text-yellow-300 text-lg">
+            <div className="w-full h-22 sm:h-28 bg-gradient-to-t from-yellow-500/20 to-yellow-500/40 border-t-2 border-yellow-400 rounded-t-2xl mt-2.5 flex items-center justify-center font-black text-yellow-300 text-lg sm:text-xl">
               1
             </div>
           </div>
 
           {/* 3rd Place (Bronze) */}
           <div className="flex-1 flex flex-col items-center">
-            <div className="relative mb-2">
+            <div className="relative mb-2.5">
               <img
                 src={top3[2].avatar}
                 alt={top3[2].username}
-                className="w-14 h-14 rounded-2xl object-cover ring-2 ring-amber-700 shadow-md bg-slate-800"
+                className="w-15 h-15 sm:w-18 sm:h-18 rounded-2xl object-cover ring-2 ring-amber-700 shadow-md bg-slate-800"
               />
-              <span className="absolute -top-2 -right-1 text-base">🥉</span>
-              <span className="absolute -bottom-1 -left-1 text-xs">{top3[2].countryFlag}</span>
+              <span className="absolute -top-2 -right-1 text-base sm:text-lg">🥉</span>
+              <span className="absolute -bottom-1 -left-1 text-xs sm:text-sm">{top3[2].countryFlag}</span>
             </div>
-            <span className="font-extrabold text-white text-xs truncate max-w-[85px]">
+            <span className="font-extrabold text-white text-xs sm:text-sm truncate max-w-[95px] sm:max-w-[140px]">
               {top3[2].username}
             </span>
-            <span className="font-mono text-[10px] text-amber-400 font-bold">
+            <span className="font-mono text-[11px] sm:text-xs text-amber-400 font-bold mt-0.5">
               {top3[2].xp.toLocaleString()} XP
             </span>
-            <div className="w-full h-12 bg-slate-800/60 border-t-2 border-amber-700 rounded-t-2xl mt-2 flex items-center justify-center font-black text-amber-600 text-sm">
+            <div className="w-full h-12 sm:h-16 bg-slate-800/60 border-t-2 border-amber-700 rounded-t-2xl mt-2.5 flex items-center justify-center font-black text-amber-600 text-base">
               3
             </div>
           </div>
@@ -174,7 +174,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
       )}
 
       {/* Ranks 4+ List */}
-      <div className="space-y-2">
+      <div className="space-y-2.5 sm:space-y-3">
         {rest.map((p, index) => {
           const rank = index + 4;
           const isCurrentUser = p.uid === currentUser.uid;
@@ -182,33 +182,33 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
           return (
             <div
               key={p.uid}
-              className={`p-3 rounded-2xl border flex items-center justify-between text-xs transition-colors ${
+              className={`p-3.5 sm:p-4 rounded-2xl border flex items-center justify-between text-xs sm:text-sm transition-colors ${
                 isCurrentUser
                   ? 'bg-indigo-950/60 border-indigo-500/60 ring-1 ring-indigo-500'
                   : 'bg-slate-900 border-slate-800'
               }`}
             >
-              <div className="flex items-center gap-3">
-                <span className="w-5 text-center font-mono font-bold text-slate-400">
+              <div className="flex items-center gap-3.5">
+                <span className="w-6 text-center font-mono font-bold text-slate-400">
                   {rank}
                 </span>
                 <img
                   src={p.avatar}
                   alt={p.username}
-                  className="w-10 h-10 rounded-xl object-cover ring-1 ring-slate-700 bg-slate-800"
+                  className="w-11 h-11 rounded-xl object-cover ring-1 ring-slate-700 bg-slate-800"
                 />
                 <div>
                   <div className="flex items-center gap-1.5">
                     <span className="font-black text-white">{p.username}</span>
-                    <span className="text-xs">{p.countryFlag}</span>
+                    <span className="text-xs sm:text-sm">{p.countryFlag}</span>
                     {isCurrentUser && (
-                      <span className="text-[9px] bg-indigo-500 text-white px-1.5 py-0.2 rounded font-bold">
+                      <span className="text-[10px] bg-indigo-500 text-white px-2 py-0.5 rounded font-bold">
                         YOU
                       </span>
                     )}
                   </div>
-                  <span className="text-[10px] text-slate-400">
-                    Level {p.level} • {p.gamesWon || 0} Wins
+                  <span className="text-[11px] text-slate-400">
+                    Level {p.level} • {p.victories ?? p.gamesWon ?? 0} Wins
                   </span>
                 </div>
               </div>
@@ -217,7 +217,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
                 <span className="font-mono font-bold text-amber-300 block">
                   {p.xp.toLocaleString()} XP
                 </span>
-                <span className="text-[10px] text-slate-500">
+                <span className="text-[11px] text-slate-500">
                   {p.discoveredCountries?.length || 0} Visas
                 </span>
               </div>

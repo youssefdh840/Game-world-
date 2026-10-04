@@ -118,7 +118,14 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-[100dvh] w-full bg-slate-950 text-slate-100 selection:bg-rose-500 selection:text-white flex flex-col">
+    <div className="min-h-[100dvh] w-full bg-slate-950 text-slate-100 selection:bg-rose-500 selection:text-white flex flex-col relative overflow-x-hidden">
+      {/* Subtle Full-Viewport Ambient Background Glows for Desktop & Tablet */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+        <div className="absolute -top-40 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl" />
+        <div className="absolute top-1/3 -right-32 w-96 h-96 bg-rose-600/10 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 left-1/3 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl" />
+      </div>
+
       {/* Top Header */}
       <TopHeader
         onOpenDailyChallenge={() => setIsDailyChallengeOpen(true)}
@@ -129,8 +136,8 @@ function AppContent() {
         onOpenAuth={() => setIsAuthOpen(true)}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-md w-full mx-auto p-4">
+      {/* Main Content Area: Responsive Container across Mobile, Tablet, and Desktop */}
+      <main className="relative z-10 flex-1 w-full max-w-md sm:max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto px-4 sm:px-6 md:px-8 pt-5 sm:pt-7 pb-28 sm:pb-32">
         {currentTab === 'home' && (
           <HomeScreen
             onStartMatchmaking={() => {

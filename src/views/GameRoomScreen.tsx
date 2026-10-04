@@ -557,21 +557,21 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     const isTie = myScore === opponentScore;
 
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 animate-fade-in">
-        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl text-center relative overflow-hidden">
+      <div className="min-h-[100dvh] w-full bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 animate-fade-in">
+        <div className="w-full max-w-md sm:max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl text-center relative overflow-hidden">
           {/* Confetti / Glow Backdrop */}
           <div className="absolute -top-12 -right-12 w-48 h-48 bg-rose-500/20 rounded-full blur-3xl pointer-events-none" />
           <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
 
           {/* Trophy / Result Icon */}
-          <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-tr from-amber-400 via-rose-500 to-indigo-600 flex items-center justify-center text-4xl shadow-xl shadow-amber-500/20 mb-3 animate-bounce">
+          <div className="w-20 h-20 sm:w-24 sm:h-24 mx-auto rounded-3xl bg-gradient-to-tr from-amber-400 via-rose-500 to-indigo-600 flex items-center justify-center text-4xl sm:text-5xl shadow-xl shadow-amber-500/20 mb-4 animate-bounce">
             {isWinner ? '🏆' : isTie ? '🤝' : '🥈'}
           </div>
 
-          <span className="text-[11px] font-black uppercase tracking-widest text-amber-400">
+          <span className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-amber-400">
             MATCH CONCLUSION
           </span>
-          <h2 className="text-3xl font-black text-white mt-1">
+          <h2 className="text-3xl sm:text-4xl font-black text-white mt-1">
             {room.forfeitBy
               ? room.forfeitBy !== user.uid
                 ? 'VICTORY BY FORFEIT!'
@@ -582,7 +582,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
               ? 'WELL PLAYED!'
               : 'DEFEAT'}
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-400 mt-1.5 leading-relaxed">
             {room.forfeitBy
               ? room.forfeitBy !== user.uid
                 ? `${opponentName} left the match. Victory has been awarded to you!`
@@ -595,39 +595,39 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           </p>
 
           {/* Final Score Duel Card */}
-          <div className="my-5 p-4 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-around">
+          <div className="my-6 p-4 sm:p-5 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-around">
             {/* You */}
             <div className="flex flex-col items-center">
-              <span className="text-2xl mb-1">{user.countryFlag}</span>
-              <span className="text-xs font-bold text-slate-300 truncate max-w-[90px]">{user.username}</span>
-              <span className="text-2xl font-black text-emerald-400 mt-0.5">{myScore}</span>
+              <span className="text-2xl sm:text-3xl mb-1">{user.countryFlag}</span>
+              <span className="text-xs sm:text-sm font-bold text-slate-300 truncate max-w-[100px] sm:max-w-[140px]">{user.username}</span>
+              <span className="text-2xl sm:text-3xl font-black text-emerald-400 mt-0.5">{myScore}</span>
             </div>
 
-            <div className="text-xs font-black text-slate-500 uppercase px-2">VS</div>
+            <div className="text-xs sm:text-sm font-black text-slate-500 uppercase px-2">VS</div>
 
             {/* Opponent */}
             <div className="flex flex-col items-center">
-              <span className="text-2xl mb-1">{opponentFlag}</span>
-              <span className="text-xs font-bold text-slate-300 truncate max-w-[90px]">{opponentName}</span>
-              <span className="text-2xl font-black text-slate-300 mt-0.5">{opponentScore}</span>
+              <span className="text-2xl sm:text-3xl mb-1">{opponentFlag}</span>
+              <span className="text-xs sm:text-sm font-bold text-slate-300 truncate max-w-[100px] sm:max-w-[140px]">{opponentName}</span>
+              <span className="text-2xl sm:text-3xl font-black text-slate-300 mt-0.5">{opponentScore}</span>
             </div>
           </div>
 
           {/* Virtual Passport Stamp Unlock Animation! */}
           {awardedResults?.newlyUnlockedCountry && (
-            <div className="mb-5 p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/50 text-left animate-scale-up">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-emerald-500/20 border border-emerald-400 text-3xl flex items-center justify-center shrink-0 shadow-lg">
+            <div className="mb-6 p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/50 text-left animate-scale-up">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-emerald-500/20 border border-emerald-400 text-3xl flex items-center justify-center shrink-0 shadow-lg">
                   {opponentFlag}
                 </div>
                 <div>
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                  <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1">
                     <span>🛂</span> PASSPORT STAMP UNLOCKED!
                   </span>
-                  <h4 className="text-sm font-black text-white">
+                  <h4 className="text-sm sm:text-base font-black text-white">
                     {opponentFlag} Discovered {awardedResults.newlyUnlockedCountry}!
                   </h4>
-                  <p className="text-[11px] text-slate-300">
+                  <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5">
                     Successfully met and played with {opponentName}. Added to your virtual passport!
                   </p>
                 </div>
@@ -636,31 +636,31 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           )}
 
           {/* XP & Coins Rewards */}
-          <div className="grid grid-cols-2 gap-3 mb-6">
-            <div className="bg-slate-800/60 border border-slate-700/40 rounded-2xl p-3 text-center">
-              <span className="text-[10px] font-bold text-indigo-400 uppercase block">XP EARNED</span>
-              <span className="text-xl font-black text-indigo-300">
+          <div className="grid grid-cols-2 gap-3.5 mb-6">
+            <div className="bg-slate-800/60 border border-slate-700/40 rounded-2xl p-3.5 sm:p-4 text-center">
+              <span className="text-[10px] sm:text-xs font-bold text-indigo-400 uppercase block">XP EARNED</span>
+              <span className="text-xl sm:text-2xl font-black text-indigo-300">
                 +{awardedResults?.xpEarned || (isWinner ? 250 : 100)} XP
               </span>
             </div>
-            <div className="bg-slate-800/60 border border-slate-700/40 rounded-2xl p-3 text-center">
-              <span className="text-[10px] font-bold text-yellow-400 uppercase block">COINS REWARD</span>
-              <span className="text-xl font-black text-yellow-300">
+            <div className="bg-slate-800/60 border border-slate-700/40 rounded-2xl p-3.5 sm:p-4 text-center">
+              <span className="text-[10px] sm:text-xs font-bold text-yellow-400 uppercase block">COINS REWARD</span>
+              <span className="text-xl sm:text-2xl font-black text-yellow-300">
                 +{awardedResults?.coinsEarned || (isWinner ? 50 : 20)} 🪙
               </span>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             <button
               onClick={() => {
                 sounds.playPop();
                 onRematch();
               }}
-              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 via-rose-600 to-indigo-600 hover:opacity-95 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-xl shadow-rose-500/20 active:scale-98 transition-all cursor-pointer"
+              className="w-full py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-rose-600 to-indigo-600 hover:opacity-95 text-white font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 shadow-xl shadow-rose-500/20 active:scale-98 transition-all cursor-pointer"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
               <span>Rematch / Play Another</span>
             </button>
 
@@ -669,7 +669,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                 sounds.playPop();
                 onExitRoom();
               }}
-              className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs active:scale-98 transition-all cursor-pointer"
+              className="w-full py-3 sm:py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs sm:text-sm active:scale-98 transition-all cursor-pointer"
             >
               Return to Dashboard
             </button>
@@ -683,110 +683,117 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   // ACTIVE PLAYING GAME ARENA
   // -------------------------------------------------------------
   return (
-    <div className="w-full min-h-[100dvh] bg-slate-950 text-slate-100 flex justify-center">
-      <div className="w-full max-w-md min-h-[100dvh] bg-slate-950 flex flex-col justify-between relative select-none">
-        {/* Top Header: VS Scoreboard */}
-        <div className="bg-slate-900 border-b border-slate-800 p-3 pt-safe sticky top-0 z-30 shadow-md">
-        <div className="flex items-center justify-between">
-          {/* Player A (You) */}
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <img
-                src={user.avatar}
-                alt={user.username}
-                className="w-10 h-10 rounded-xl object-cover ring-2 ring-indigo-500 bg-slate-800"
-              />
-              <span className="absolute -bottom-1 -right-1 text-xs">{user.countryFlag}</span>
-            </div>
-            <div>
-              <span className="text-xs font-bold text-white block truncate max-w-[80px]">
-                {user.username}
-              </span>
-              <span className="text-sm font-black text-indigo-400 font-mono">{myScore}</span>
-            </div>
-          </div>
+    <div className="w-full min-h-[100dvh] bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-x-hidden select-none">
+      {/* Subtle Full-Viewport Ambient Background Glows */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+        <div className="absolute -top-32 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-rose-600/10 rounded-full blur-3xl" />
+      </div>
 
-          {/* Round & Timer Indicator */}
-          <div className="text-center px-1 flex items-center gap-1.5">
-            <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
-                ROUND {room.currentRound} / {room.totalRounds}
-              </span>
-              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-800 border border-slate-700 text-sm font-mono font-black text-amber-400">
-                {timeLeft}s
+      {/* Top Header: VS Scoreboard */}
+      <div className="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 md:px-8 pt-safe pb-3 sm:py-4 sticky top-0 z-30 shadow-md">
+        <div className="w-full max-w-md sm:max-w-xl md:max-w-2xl mx-auto">
+          <div className="flex items-center justify-between gap-2">
+            {/* Player A (You) */}
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <div className="relative shrink-0">
+                <img
+                  src={user.avatar}
+                  alt={user.username}
+                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-indigo-500 bg-slate-800"
+                />
+                <span className="absolute -bottom-1 -right-1 text-xs sm:text-sm">{user.countryFlag}</span>
+              </div>
+              <div className="min-w-0">
+                <span className="text-xs sm:text-sm font-bold text-white block truncate max-w-[85px] sm:max-w-[140px]">
+                  {user.username}
+                </span>
+                <span className="text-sm sm:text-base font-black text-indigo-400 font-mono">{myScore}</span>
               </div>
             </div>
-            <button
-              onClick={() => {
-                sounds.playPop();
-                setForfeitModalOpen(true);
-              }}
-              className="p-1.5 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors cursor-pointer"
-              title="Leave / Forfeit Match"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
+
+            {/* Round & Timer Indicator */}
+            <div className="text-center px-2 flex items-center gap-2 shrink-0">
+              <div>
+                <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-slate-400 block">
+                  ROUND {room.currentRound} / {room.totalRounds}
+                </span>
+                <div className="inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-800 border border-slate-700 text-sm sm:text-base font-mono font-black text-amber-400 mt-0.5">
+                  {timeLeft}s
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  sounds.playPop();
+                  setForfeitModalOpen(true);
+                }}
+                className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Leave / Forfeit Match"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Player B (Opponent) */}
+            <div className="flex items-center gap-2.5 sm:gap-3 flex-row-reverse text-right min-w-0">
+              <div className="relative shrink-0">
+                <img
+                  src={opponentAvatar}
+                  alt={opponentName}
+                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-rose-500 bg-slate-800"
+                />
+                <span className="absolute -bottom-1 -left-1 text-xs sm:text-sm">{opponentFlag}</span>
+              </div>
+              <div className="min-w-0">
+                <span className="text-xs sm:text-sm font-bold text-white block truncate max-w-[85px] sm:max-w-[140px]">
+                  {opponentName}
+                </span>
+                <span className="text-sm sm:text-base font-black text-rose-400 font-mono">{opponentScore}</span>
+              </div>
+            </div>
           </div>
 
-          {/* Player B (Opponent) */}
-          <div className="flex items-center gap-2 flex-row-reverse text-right">
-            <div className="relative">
-              <img
-                src={opponentAvatar}
-                alt={opponentName}
-                className="w-10 h-10 rounded-xl object-cover ring-2 ring-rose-500 bg-slate-800"
-              />
-              <span className="absolute -bottom-1 -left-1 text-xs">{opponentFlag}</span>
-            </div>
-            <div>
-              <span className="text-xs font-bold text-white block truncate max-w-[80px]">
-                {opponentName}
-              </span>
-              <span className="text-sm font-black text-rose-400 font-mono">{opponentScore}</span>
-            </div>
+          {/* Timer Bar */}
+          <div className="w-full h-1.5 sm:h-2 bg-slate-800 rounded-full mt-3 overflow-hidden">
+            <div
+              className={`h-full transition-all duration-300 ${
+                timeLeft <= 3 ? 'bg-rose-500 animate-pulse' : 'bg-gradient-to-r from-amber-400 to-rose-500'
+              }`}
+              style={{ width: `${(timeLeft / 10) * 100}%` }}
+            />
           </div>
-        </div>
-
-        {/* Timer Bar */}
-        <div className="w-full h-1.5 bg-slate-800 rounded-full mt-2.5 overflow-hidden">
-          <div
-            className={`h-full transition-all duration-300 ${
-              timeLeft <= 3 ? 'bg-rose-500 animate-pulse' : 'bg-gradient-to-r from-amber-400 to-rose-500'
-            }`}
-            style={{ width: `${(timeLeft / 10) * 100}%` }}
-          />
         </div>
       </div>
 
       {/* Main Question Arena */}
-      <div className="flex-1 p-4 flex flex-col justify-center">
+      <div className="relative z-10 flex-1 w-full max-w-md sm:max-w-xl md:max-w-2xl mx-auto px-4 sm:px-6 md:px-8 py-6 sm:py-8 flex flex-col justify-center">
         {currentQ ? (
-          <div className="space-y-4">
+          <div className="space-y-5 sm:space-y-6">
             {/* Category Pill & Country Origin */}
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 rounded-full">
+              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1 rounded-full">
                 {currentQ.category.replace('_', ' ')}
               </span>
-              <span className="text-xs text-slate-400 font-bold flex items-center gap-1">
+              <span className="text-xs sm:text-sm text-slate-400 font-bold flex items-center gap-1.5">
                 <span>{currentQ.countryName}</span>
                 <span>{currentQ.category === 'guess_word' ? '🗣️' : '🌍'}</span>
               </span>
             </div>
 
             {/* Question Prompt Card */}
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl text-center relative overflow-hidden">
-              <p className="text-base font-extrabold text-white leading-snug">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 md:p-8 shadow-xl text-center relative overflow-hidden">
+              <p className="text-base sm:text-lg md:text-xl font-extrabold text-white leading-relaxed">
                 {currentQ.prompt}
               </p>
 
               {/* Special Mini-Game 4: Music Sound Synthesis Button */}
               {currentQ.category === 'music_culture' && (
-                <div className="mt-4">
+                <div className="mt-5">
                   <button
                     onClick={() => {
                       sounds.playMelody([523, 659, 784, 1046], 'bell');
                     }}
-                    className="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 py-2 rounded-2xl text-xs font-extrabold shadow-md active:scale-95 transition-transform cursor-pointer"
+                    className="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-extrabold shadow-md active:scale-95 transition-transform cursor-pointer"
                   >
                     <Music className="w-4 h-4 animate-bounce" />
                     <span>🔊 Play Cultural Audio Pattern</span>
@@ -796,7 +803,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
             </div>
 
             {/* 4 Interactive Option Buttons */}
-            <div className="grid grid-cols-1 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
               {currentQ.options.map((option, idx) => {
                 const isSelected = selectedAnswer === option;
                 const isCorrect = option === currentQ.correctAnswer;
@@ -819,20 +826,20 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                     key={option}
                     disabled={hasAnswered}
                     onClick={() => handleAnswerSelect(option)}
-                    className={`w-full p-4 rounded-2xl border text-sm font-bold text-left transition-all active:scale-98 flex items-center justify-between cursor-pointer ${btnStyle}`}
+                    className={`w-full p-4 sm:p-4.5 rounded-2xl border text-sm sm:text-base font-bold text-left transition-all active:scale-98 flex items-center justify-between gap-2 cursor-pointer ${btnStyle}`}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className="w-6 h-6 rounded-lg bg-slate-800/80 text-slate-400 text-xs flex items-center justify-center font-mono">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-7 h-7 rounded-lg bg-slate-800/80 text-slate-400 text-xs flex items-center justify-center font-mono shrink-0">
                         {String.fromCharCode(65 + idx)}
                       </span>
-                      <span>{option}</span>
+                      <span className="leading-snug">{option}</span>
                     </div>
 
                     {showResult && isCorrect && (
-                      <CheckCircle2 className="w-5 h-5 text-white" />
+                      <CheckCircle2 className="w-5 h-5 text-white shrink-0" />
                     )}
                     {showResult && isSelected && !isCorrect && (
-                      <AlertCircle className="w-5 h-5 text-white" />
+                      <AlertCircle className="w-5 h-5 text-white shrink-0" />
                     )}
                   </button>
                 );
@@ -841,8 +848,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
             {/* Explanation Drawer when Round Answers Revealed */}
             {showExplanation && (
-              <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-500/40 text-xs text-indigo-200 animate-fade-in flex items-start gap-2.5">
-                <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="p-4 sm:p-5 rounded-2xl bg-indigo-950/40 border border-indigo-500/40 text-xs sm:text-sm text-indigo-200 animate-fade-in flex items-start gap-3">
+                <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-extrabold text-white block mb-0.5">Cultural Fact:</span>
                   <p className="leading-relaxed">{currentQ.explanation}</p>
@@ -856,49 +863,51 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       </div>
 
       {/* Bottom Action Bar: Chat & Safety Controls */}
-      <div className="bg-slate-900/90 border-t border-slate-800 px-4 py-2.5 flex items-center justify-between">
-        {/* Quick Emoji Reactions */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          {['👏', '🔥', '🇹🇳', '🇯🇵', '😱', '❤️', 'GG!'].map((emoji) => (
+      <div className="relative z-20 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-4 sm:px-6 md:px-8 py-3">
+        <div className="w-full max-w-md sm:max-w-xl md:max-w-2xl mx-auto flex items-center justify-between gap-3">
+          {/* Quick Emoji Reactions */}
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar">
+            {['👏', '🔥', '🇹🇳', '🇯🇵', '😱', '❤️', 'GG!'].map((emoji) => (
+              <button
+                key={emoji}
+                onClick={() => handleSendEmoji(emoji)}
+                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs sm:text-sm rounded-xl active:scale-90 transition-transform cursor-pointer shrink-0"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+
+          {/* Chat Drawer Toggle & Report Safety Button */}
+          <div className="flex items-center gap-2 shrink-0">
             <button
-              key={emoji}
-              onClick={() => handleSendEmoji(emoji)}
-              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-xs rounded-xl active:scale-90 transition-transform cursor-pointer"
+              onClick={() => {
+                sounds.playPop();
+                setIsChatOpen(!isChatOpen);
+              }}
+              className="p-2.5 rounded-xl bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 transition-colors relative cursor-pointer"
+              title="In-game Chat"
             >
-              {emoji}
+              <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
+              {messages.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full" />
+              )}
             </button>
-          ))}
-        </div>
 
-        {/* Chat Drawer Toggle & Report Safety Button */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              sounds.playPop();
-              setIsChatOpen(!isChatOpen);
-            }}
-            className="p-2 rounded-xl bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 transition-colors relative"
-            title="In-game Chat"
-          >
-            <MessageSquare className="w-4 h-4" />
-            {messages.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full" />
-            )}
-          </button>
-
-          <button
-            onClick={() => setReportModalOpen(true)}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors"
-            title="Report Player"
-          >
-            <Flag className="w-4 h-4" />
-          </button>
+            <button
+              onClick={() => setReportModalOpen(true)}
+              className="p-2.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+              title="Report Player"
+            >
+              <Flag className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+          </div>
         </div>
       </div>
 
       {/* In-Game Slide-Up Chat Panel */}
       {isChatOpen && (
-        <div className="fixed inset-x-0 bottom-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 p-4 max-w-md mx-auto rounded-t-3xl shadow-2xl animate-slide-up">
+        <div className="fixed inset-x-0 bottom-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 p-4 sm:p-5 max-w-md sm:max-w-xl mx-auto rounded-t-3xl shadow-2xl animate-slide-up">
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-300">
               Live Duel Chat
@@ -1030,10 +1039,10 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
             <p className="text-xs text-slate-400 leading-relaxed">
               If you leave now, you will forfeit this duel and victory will be awarded to {opponentName}.
             </p>
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-2.5 pt-2">
               <button
                 onClick={() => setForfeitModalOpen(false)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs sm:text-sm font-bold transition-colors cursor-pointer"
               >
                 Resume
               </button>
@@ -1044,7 +1053,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                   await forfeitGame(room.id, user.uid, roomRef.current);
                   onExitRoom();
                 }}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-600/30 transition-colors cursor-pointer"
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-rose-600/30 transition-colors cursor-pointer"
               >
                 Forfeit
               </button>
@@ -1052,7 +1061,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           </div>
         </div>
       )}
-      </div>
     </div>
   );
 };

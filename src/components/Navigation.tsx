@@ -50,21 +50,21 @@ export const TopHeader: React.FC<{
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 pt-safe pb-2.5">
-      <div className="max-w-md mx-auto flex items-center justify-between">
+    <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 md:px-8 pt-safe pb-3 sm:py-3.5">
+      <div className="w-full max-w-md sm:max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto flex items-center justify-between gap-3">
         {/* Brand / Title */}
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-black text-sm">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-black text-base sm:text-lg shrink-0">
             🌍
           </div>
-          <div>
-            <h1 className="text-sm font-extrabold tracking-tight bg-gradient-to-r from-amber-400 via-rose-300 to-indigo-300 bg-clip-text text-transparent">
+          <div className="min-w-0">
+            <h1 className="text-sm sm:text-base font-extrabold tracking-tight bg-gradient-to-r from-amber-400 via-rose-300 to-indigo-300 bg-clip-text text-transparent truncate">
               WORLD CHALLENGE
             </h1>
-            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium">
+            <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-slate-400 font-medium">
               <span>{userProfile?.countryFlag || '🌐'}</span>
-              <span className="truncate max-w-[80px]">{userProfile?.username || 'Guest'}</span>
-              <span className="bg-indigo-950 text-indigo-300 px-1 rounded font-bold">
+              <span className="truncate max-w-[90px] sm:max-w-[160px]">{userProfile?.username || 'Guest'}</span>
+              <span className="bg-indigo-950 text-indigo-300 px-1.5 py-0.5 rounded font-bold">
                 Lv.{userProfile?.level || 1}
               </span>
             </div>
@@ -72,7 +72,7 @@ export const TopHeader: React.FC<{
         </div>
 
         {/* Status Indicators & Quick Actions */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
           {/* Prominent Login / Account Button */}
           {isGuest ? (
             <button
@@ -81,7 +81,7 @@ export const TopHeader: React.FC<{
                 onOpenAuth();
               }}
               title="Log In / Sign Up"
-              className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-black px-2.5 py-1 rounded-xl text-xs shadow-md shadow-rose-500/20 active:scale-95 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-black px-3 sm:px-3.5 py-1.5 rounded-xl text-xs shadow-md shadow-rose-500/20 active:scale-95 transition-all cursor-pointer"
             >
               <LogIn className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Log In</span>
@@ -93,9 +93,9 @@ export const TopHeader: React.FC<{
                 onOpenAuth();
               }}
               title={userProfile?.username || 'Account'}
-              className="flex items-center justify-center bg-slate-800/80 border border-slate-700 text-slate-200 hover:bg-slate-800 px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              className="flex items-center justify-center bg-slate-800/80 border border-slate-700 text-slate-200 hover:bg-slate-800 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
             >
-              <span className="truncate max-w-[90px]">{userProfile?.username || 'Account'}</span>
+              <span className="truncate max-w-[90px] sm:max-w-[140px]">{userProfile?.username || 'Account'}</span>
             </button>
           )}
 
@@ -106,7 +106,7 @@ export const TopHeader: React.FC<{
               onOpenDailyChallenge();
             }}
             title="Daily Challenge Streak"
-            className="flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 px-2 py-1 rounded-full text-xs font-bold transition-all active:scale-95 cursor-pointer"
+            className="flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-bold transition-all active:scale-95 cursor-pointer"
           >
             <Flame className="w-3.5 h-3.5 fill-amber-400 text-amber-400 animate-pulse" />
             <span>{userProfile?.dailyStreak || 1}</span>
@@ -119,7 +119,7 @@ export const TopHeader: React.FC<{
               onOpenLeaderboard();
             }}
             title="Coins & Leaderboard"
-            className="flex items-center gap-1 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 px-2 py-1 rounded-full text-xs font-bold transition-all active:scale-95 cursor-pointer"
+            className="flex items-center gap-1.5 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-bold transition-all active:scale-95 cursor-pointer"
           >
             <Coins className="w-3.5 h-3.5 text-yellow-400" />
             <span>{userProfile?.coins || 100}</span>
@@ -129,7 +129,7 @@ export const TopHeader: React.FC<{
           <button
             onClick={handleToggleSound}
             title={soundEnabled ? 'Mute Sounds' : 'Unmute Sounds'}
-            className="p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+            className="p-2 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
           >
             {soundEnabled ? (
               <Volume2 className="w-4 h-4 text-emerald-400" />
@@ -146,7 +146,7 @@ export const TopHeader: React.FC<{
                 onOpenAdmin();
               }}
               title="Admin Dashboard"
-              className="p-1.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 hover:bg-rose-500/30 transition-colors cursor-pointer"
+              className="p-2 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 hover:bg-rose-500/30 transition-colors cursor-pointer"
             >
               <Shield className="w-4 h-4" />
             </button>
@@ -175,8 +175,8 @@ export const BottomNavigation: React.FC<NavigationProps> = ({
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 pb-safe">
-      <div className="max-w-md mx-auto flex items-center justify-around px-2 py-1.5 select-none">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 pb-safe px-2 sm:px-6">
+      <div className="w-full max-w-md sm:max-w-xl md:max-w-2xl mx-auto flex items-center justify-around py-2 sm:py-2.5 select-none">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = currentTab === tab.id;
