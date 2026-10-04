@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { UserProfile } from '../types/game';
 import { useAuth } from '../context/AuthContext';
 import { COUNTRIES, getCountryByCode } from '../services/countryData';
@@ -19,7 +19,57 @@ import {
   VolumeX,
   LogIn,
   Loader2,
+  Camera,
+  Upload,
+  Link as LinkIcon,
 } from 'lucide-react';
+
+const PRESET_AVATARS = [
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=240&q=80',
+  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=240&q=80',
+  'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=240&q=80',
+  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=240&q=80',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=240&q=80',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Atlas',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Sahara',
+  'https://api.dicebear.com/7.x/bottts/svg?seed=Cosmos',
+];
+
+function compressImageToDataUrl(file: File, maxSize = 256, quality = 0.82): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read the selected image file.'));
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const img = new Image();
+      img.onerror = () => resolve(dataUrl);
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const size = Math.min(maxSize, Math.max(img.width, img.height, 128));
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(dataUrl);
+            return;
+          }
+          // Center-crop square
+          const minDim = Math.min(img.width, img.height);
+          const sx = (img.width - minDim) / 2;
+          const sy = (img.height - minDim) / 2;
+          ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+          const compressed = canvas.toDataURL('image/jpeg', quality);
+          resolve(compressed);
+        } catch {
+          resolve(dataUrl);
+        }
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 interface ProfileScreenProps {
   user: UserProfile;
@@ -38,17 +88,23 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [liveUser, setLiveUser] = useState<UserProfile>(user);
   const [isEditing, setIsEditing] = useState(false);
   const [username, setUsername] = useState(user.username);
+  const [avatar, setAvatar] = useState(user.avatar);
+  const [avatarUrlInput, setAvatarUrlInput] = useState('');
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [countryCode, setCountryCode] = useState(user.countryCode);
   const [bio, setBio] = useState(user.bio || '');
   const [language, setLanguage] = useState(user.preferredLanguage || 'English');
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Sync with prop updates
   useEffect(() => {
     setLiveUser(user);
     if (!isEditing) {
       setUsername(user.username);
+      setAvatar(user.avatar);
       setCountryCode(user.countryCode);
       setBio(user.bio || '');
       setLanguage(user.preferredLanguage || 'English');
@@ -77,16 +133,71 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   const unlockedBadgeIds = new Set(liveUser.unlockedBadges || []);
 
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setAvatarError('Please select a valid image file (PNG, JPG, WEBP, GIF).');
+      sounds.playWrong();
+      return;
+    }
+
+    setAvatarError(null);
+    setAvatarUploading(true);
+    sounds.playPop();
+
+    try {
+      const dataUrl = await compressImageToDataUrl(file, 256, 0.85);
+      setAvatar(dataUrl);
+      setLiveUser((prev) => ({ ...prev, avatar: dataUrl }));
+      // Immediately persist the new avatar to state, localStorage, and Firestore
+      await updateProfile({ avatar: dataUrl });
+      sounds.playCorrect();
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : 'Failed to process image');
+      sounds.playWrong();
+    } finally {
+      setAvatarUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleApplyAvatarUrl = async () => {
+    const trimmed = avatarUrlInput.trim();
+    if (!trimmed) return;
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://') && !trimmed.startsWith('data:image/')) {
+      setAvatarError('Please enter a valid image URL starting with https://');
+      sounds.playWrong();
+      return;
+    }
+    setAvatarError(null);
+    setAvatar(trimmed);
+    setLiveUser((prev) => ({ ...prev, avatar: trimmed }));
+    setAvatarUrlInput('');
+    await updateProfile({ avatar: trimmed });
+    sounds.playCorrect();
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 3000);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setAvatarError(null);
     sounds.playPop();
 
     const selectedCountry = getCountryByCode(countryCode) || COUNTRIES[0];
+    const finalAvatar = avatarUrlInput.trim() || avatar || liveUser.avatar;
 
     try {
       await updateProfile({
         username: username.trim(),
+        avatar: finalAvatar,
         countryCode: selectedCountry.code,
         countryName: selectedCountry.name,
         countryFlag: selectedCountry.flag,
@@ -95,6 +206,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       });
       sounds.playCorrect();
       setIsEditing(false);
+      setAvatarUrlInput('');
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err) {
@@ -118,13 +230,51 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         {/* Glow backdrop */}
         <div className="absolute -top-10 -right-10 w-36 h-36 bg-indigo-500/15 rounded-full blur-2xl pointer-events-none" />
 
-        <div className="relative inline-block mb-3">
+        {/* Hidden File Input for Direct Avatar Upload */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleAvatarFileChange}
+          className="hidden"
+        />
+
+        <div className="relative inline-block mb-3 group">
           <img
-            src={liveUser.avatar}
+            src={isEditing ? avatar || liveUser.avatar : liveUser.avatar}
             alt={liveUser.username}
             className="w-20 h-20 sm:w-24 sm:h-24 mx-auto rounded-3xl object-cover ring-2 ring-indigo-500 shadow-xl bg-slate-800"
           />
-          <span className="absolute -bottom-1 -right-1 text-2xl p-0.5 bg-slate-900 rounded-full shadow">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={avatarUploading}
+            title="Upload custom profile picture"
+            className="absolute inset-0 rounded-3xl bg-slate-950/60 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity flex flex-col items-center justify-center text-white cursor-pointer"
+          >
+            {avatarUploading ? (
+              <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+            ) : (
+              <>
+                <Camera className="w-6 h-6 text-white drop-shadow" />
+                <span className="text-[10px] font-extrabold mt-0.5">Change</span>
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={avatarUploading}
+            title="Upload custom profile picture"
+            className="absolute -top-1.5 -right-1.5 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-indigo-600 hover:bg-indigo-500 border-2 border-slate-900 text-white flex items-center justify-center shadow-lg transition-transform active:scale-95 cursor-pointer"
+          >
+            {avatarUploading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Camera className="w-3.5 h-3.5" />
+            )}
+          </button>
+          <span className="absolute -bottom-1 -right-1 text-2xl p-0.5 bg-slate-900 rounded-full shadow pointer-events-none">
             {liveUser.countryFlag}
           </span>
         </div>
@@ -176,9 +326,111 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {isEditing && (
         <form
           onSubmit={handleSave}
-          className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 space-y-4 shadow-xl"
+          className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 space-y-5 shadow-xl"
         >
-          <h3 className="text-sm sm:text-base font-black text-white mb-2">Edit Traveler Profile</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm sm:text-base font-black text-white">Edit Traveler Profile</h3>
+            <span className="text-[11px] text-slate-400">Changes sync in real-time</span>
+          </div>
+
+          {avatarError && (
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs rounded-xl">
+              {avatarError}
+            </div>
+          )}
+
+          {/* Avatar Upload & Customization Section */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
+            <label className="block text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Profile Picture / Avatar
+            </label>
+
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+              <div className="relative shrink-0">
+                <img
+                  src={avatar || liveUser.avatar}
+                  alt="Preview"
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover ring-2 ring-indigo-500 bg-slate-800 shadow-md"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute -bottom-1.5 -right-1.5 p-1.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white shadow cursor-pointer"
+                  title="Upload from device"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="flex-1 w-full space-y-2.5">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={avatarUploading}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {avatarUploading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="w-3.5 h-3.5" />
+                    )}
+                    <span>Upload Photo from Device</span>
+                  </button>
+                </div>
+
+                {/* Image URL Input */}
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <LinkIcon className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500" />
+                    <input
+                      type="url"
+                      placeholder="Or paste custom image URL (https://...)"
+                      value={avatarUrlInput}
+                      onChange={(e) => setAvatarUrlInput(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-8 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleApplyAvatarUrl}
+                    disabled={!avatarUrlInput.trim()}
+                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-indigo-300 font-bold text-xs transition-colors cursor-pointer shrink-0"
+                  >
+                    Apply URL
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Preset Avatars */}
+            <div>
+              <span className="block text-[10px] font-bold text-slate-500 uppercase mb-2">
+                Or Pick a Traveler Avatar
+              </span>
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                {PRESET_AVATARS.map((presetUrl, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={async () => {
+                      sounds.playPop();
+                      setAvatar(presetUrl);
+                      setLiveUser((prev) => ({ ...prev, avatar: presetUrl }));
+                      await updateProfile({ avatar: presetUrl });
+                    }}
+                    className={`relative w-10 h-10 rounded-xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
+                      avatar === presetUrl
+                        ? 'border-indigo-500 scale-105 shadow-md shadow-indigo-500/30'
+                        : 'border-slate-800 opacity-75 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={presetUrl} alt={`Preset ${idx + 1}`} className="w-full h-full object-cover bg-slate-800" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>

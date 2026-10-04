@@ -54,8 +54,18 @@ export const TopHeader: React.FC<{
       <div className="w-full max-w-md sm:max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto flex items-center justify-between gap-2 sm:gap-3">
         {/* Brand / User Badge */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-black text-base sm:text-lg shrink-0">
-            🌍
+          <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 p-0.5 shadow-lg shadow-indigo-500/20 shrink-0">
+            {userProfile?.avatar ? (
+              <img
+                src={userProfile.avatar}
+                alt={userProfile.username || 'Avatar'}
+                className="w-full h-full rounded-[10px] object-cover bg-slate-900"
+              />
+            ) : (
+              <div className="w-full h-full rounded-[10px] flex items-center justify-center text-white font-black text-base sm:text-lg">
+                🌍
+              </div>
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <h1 className="text-xs sm:text-base font-extrabold tracking-tight bg-gradient-to-r from-amber-400 via-rose-300 to-indigo-300 bg-clip-text text-transparent truncate leading-tight">
