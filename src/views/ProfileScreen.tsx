@@ -377,14 +377,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         <div className="pt-2 border-t border-slate-800">
           {firebaseUser && !firebaseUser.isAnonymous ? (
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-300 bg-slate-950/60 p-3 rounded-2xl border border-slate-800">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <div>
-                    <span className="font-bold text-white block">{firebaseUser.email || liveUser.username}</span>
-                    <span className="text-[10px] text-emerald-400 font-semibold">Account Synced to Firebase Cloud</span>
-                  </div>
-                </div>
+              <div className="flex items-center justify-center text-xs text-slate-300 bg-slate-950/60 px-4 py-3 rounded-2xl border border-slate-800">
+                <span className="font-bold text-white truncate">
+                  {liveUser.username || firebaseUser.displayName || firebaseUser.email}
+                </span>
               </div>
               <button
                 onClick={() => {

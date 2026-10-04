@@ -92,11 +92,10 @@ export const TopHeader: React.FC<{
                 sounds.playPop();
                 onOpenAuth();
               }}
-              title={`Logged in as ${firebaseUser?.email || userProfile?.username}`}
-              className="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 px-2 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              title={userProfile?.username || 'Account'}
+              className="flex items-center justify-center bg-slate-800/80 border border-slate-700 text-slate-200 hover:bg-slate-800 px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer"
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="truncate max-w-[70px]">{userProfile?.username || 'Account'}</span>
+              <span className="truncate max-w-[90px]">{userProfile?.username || 'Account'}</span>
             </button>
           )}
 
