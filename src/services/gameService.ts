@@ -77,6 +77,9 @@ export function subscribeToGameRoom(
   );
 }
 
+export const QUESTION_DURATION_SECONDS = 50;
+export const QUESTION_DURATION_MS = QUESTION_DURATION_SECONDS * 1000;
+
 export async function submitPlayerAnswer(
   roomId: string,
   userId: string,
@@ -91,20 +94,20 @@ export async function submitPlayerAnswer(
   const activeUid = auth.currentUser?.uid || userId;
   const isHost = room.hostId === activeUid || room.hostId === userId;
   const pointsEarned = isCorrect
-    ? Math.max(50, 100 + Math.floor((10000 - Math.min(timeTakenMs, 10000)) / 100))
+    ? Math.max(50, 100 + Math.floor(((QUESTION_DURATION_MS - Math.min(timeTakenMs, QUESTION_DURATION_MS)) / QUESTION_DURATION_MS) * 100))
     : 0;
 
   const updates: Record<string, unknown> = {};
 
   if (isHost) {
     updates.hostAnswer = answer ?? '';
-    updates.hostAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : 10000;
+    updates.hostAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : QUESTION_DURATION_MS;
     if (pointsEarned > 0) {
       updates.hostScore = increment(pointsEarned);
     }
   } else {
     updates.guestAnswer = answer ?? '';
-    updates.guestAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : 10000;
+    updates.guestAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : QUESTION_DURATION_MS;
     if (pointsEarned > 0) {
       updates.guestScore = increment(pointsEarned);
     }

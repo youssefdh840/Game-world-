@@ -12,6 +12,8 @@ import {
   recordQuestionsAnsweredInSession,
   shuffleArraySeeded,
   forfeitGame,
+  QUESTION_DURATION_SECONDS,
+  QUESTION_DURATION_MS,
 } from '../services/gameService';
 import { awardGameResults } from '../services/userService';
 import { auth } from '../services/firebase';
@@ -52,7 +54,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 }) => {
   const effectiveUid = auth.currentUser?.uid || user.uid;
   const [room, setRoom] = useState<GameRoom>(initialRoom);
-  const [timeLeft, setTimeLeft] = useState<number>(10);
+  const [timeLeft, setTimeLeft] = useState<number>(QUESTION_DURATION_SECONDS);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [hasAnswered, setHasAnswered] = useState<boolean>(false);
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
@@ -290,8 +292,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     const now = Date.now();
     let startTime = room.roundStartTime || room.roundStartedAt || 0;
 
-    // Check if timestamp is missing or stale (> 15s old or > 4s in future)
-    const isInvalid = !startTime || (now - startTime >= 15000) || (startTime > now + 4000);
+    // Check if timestamp is missing or stale (> 55s old or > 4s in future)
+    const isInvalid = !startTime || (now - startTime >= QUESTION_DURATION_MS + 5000) || (startTime > now + 4000);
 
     if (isInvalid) {
       if (isHostRef.current) {
@@ -310,9 +312,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       roundStartTimeRef.current = startTime;
     }
 
-    // Initial countdown calculation (clamped so clock skew never produces negative or >10 remaining)
+    // Initial countdown calculation (clamped so clock skew never produces negative or >50 remaining)
     const elapsedInitial = Math.max(0, Math.floor((Date.now() - roundStartTimeRef.current) / 1000));
-    const initialRemaining = Math.max(0, 10 - elapsedInitial);
+    const initialRemaining = Math.max(0, QUESTION_DURATION_SECONDS - elapsedInitial);
     setTimeLeft(initialRemaining);
 
     let lastSoundSecond = -1;
@@ -329,7 +331,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       }
 
       const elapsed = Math.max(0, Math.floor((Date.now() - roundStartTimeRef.current) / 1000));
-      const remaining = Math.max(0, 10 - elapsed);
+      const remaining = Math.max(0, QUESTION_DURATION_SECONDS - elapsed);
       setTimeLeft(remaining);
 
       if (remaining <= 3 && remaining > 0 && remaining !== lastSoundSecond) {
@@ -389,9 +391,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     const isHostPlayer = isHostRef.current;
     const activeUid = auth.currentUser?.uid || user.uid;
     if (isHostPlayer && !currentRoom.hostAnswer) {
-      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, 10000, false, currentRoom);
+      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, QUESTION_DURATION_MS, false, currentRoom);
     } else if (!isHostPlayer && !currentRoom.guestAnswer) {
-      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, 10000, false, currentRoom);
+      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, QUESTION_DURATION_MS, false, currentRoom);
     }
 
     setRoom((prev) => ({
@@ -419,7 +421,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     }
 
     const pointsEarned = isCorrect
-      ? Math.max(50, 100 + Math.floor((10000 - Math.min(timeTaken, 10000)) / 100))
+      ? Math.max(50, 100 + Math.floor(((QUESTION_DURATION_MS - Math.min(timeTaken, QUESTION_DURATION_MS)) / QUESTION_DURATION_MS) * 100))
       : 0;
 
     // Optimistically update local room
@@ -767,9 +769,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           <div className="w-full h-1.5 sm:h-2 bg-slate-800 rounded-full mt-3 overflow-hidden">
             <div
               className={`h-full transition-all duration-300 ${
-                timeLeft <= 3 ? 'bg-rose-500 animate-pulse' : 'bg-gradient-to-r from-amber-400 to-rose-500'
+                timeLeft <= 5 ? 'bg-rose-500 animate-pulse' : 'bg-gradient-to-r from-amber-400 to-rose-500'
               }`}
-              style={{ width: `${(timeLeft / 10) * 100}%` }}
+              style={{ width: `${(timeLeft / QUESTION_DURATION_SECONDS) * 100}%` }}
             />
           </div>
         </div>
