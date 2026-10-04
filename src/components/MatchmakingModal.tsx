@@ -9,6 +9,8 @@ import {
   listenToPrivateRoomHost,
 } from '../services/matchmakingService';
 import { syncRoomRoundStartTime } from '../services/gameService';
+import { getCountryByCode } from '../services/countryData';
+import { getSyncDetectedCountry } from '../services/geolocationService';
 import { auth } from '../services/firebase';
 import { sounds } from '../services/soundEffects';
 import {
@@ -61,13 +63,16 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
   const cdIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const hasCommencedRef = useRef<boolean>(false);
 
+  const syncGeo = getSyncDetectedCountry();
+  const resolvedUserCountry = getCountryByCode(user?.countryCode || syncGeo.countryCode);
   const safeUser: UserProfile = {
     ...user,
     uid: auth.currentUser?.uid || user?.uid || 'guest_player',
     username: user?.username || auth.currentUser?.displayName || 'Explorer',
     avatar: user?.avatar || auth.currentUser?.photoURL || DEFAULT_AVATAR,
-    countryCode: user?.countryCode || 'TN',
-    countryFlag: user?.countryFlag || '🇹🇳',
+    countryCode: resolvedUserCountry?.code || user?.countryCode || syncGeo.countryCode || 'TN',
+    countryName: resolvedUserCountry?.name || user?.countryName || syncGeo.countryName || 'Tunisia',
+    countryFlag: resolvedUserCountry?.flag || user?.countryFlag || syncGeo.countryFlag || '🇹🇳',
   };
 
   // Cleanup helper

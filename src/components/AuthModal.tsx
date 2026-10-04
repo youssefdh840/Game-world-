@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { COUNTRIES } from '../services/countryData';
+import { COUNTRIES, getCountryByCode } from '../services/countryData';
+import { detectUserCountry, getSyncDetectedCountry } from '../services/geolocationService';
 import { sounds } from '../services/soundEffects';
 import { Globe, Lock, Mail, User, Sparkles, ArrowRight, X, KeyRound } from 'lucide-react';
 import { FirebaseConfigModal } from './FirebaseConfigModal';
@@ -31,13 +32,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
-  const [countryCode, setCountryCode] = useState('TN');
+  const [countryCode, setCountryCode] = useState(() => getSyncDetectedCountry().countryCode);
   const [language, setLanguage] = useState('English');
   const [bio, setBio] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [isFirebaseConfigOpen, setIsFirebaseConfigOpen] = useState(false);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      detectUserCountry().then((geo) => {
+        if (geo?.countryCode) {
+          setCountryCode(geo.countryCode);
+        }
+      });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

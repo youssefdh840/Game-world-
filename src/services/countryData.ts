@@ -475,6 +475,120 @@ export const COUNTRIES: CountryData[] = [
     badgeTitle: 'Inca Custodian',
     population: '34 Million',
     mapCoords: { x: 26, y: 62 }
+  },
+  {
+    code: 'DZ',
+    name: 'Algeria',
+    flag: '🇩🇿',
+    capital: 'Algiers',
+    continent: 'Africa',
+    languages: ['Arabic', 'Tamazight', 'Algerian Darja', 'French'],
+    traditionalFoods: ['Couscous', 'Chakhchoukha', 'Rechta', 'Chorba Frik', 'Makroudh'],
+    landmarks: ['Casbah of Algiers', 'Tassili n’Ajjer', 'Timgad Roman Ruins', 'Constantine Bridges'],
+    facts: [
+      'Algeria is the largest country in Africa and the tenth largest in the world by land area.',
+      'Tassili n’Ajjer National Park is renowned for over 15,000 prehistoric cave paintings and rock carvings.',
+      'Constantine is known as the "City of Bridges" due to its dramatic suspension bridges spanning deep gorges.',
+      'Raï music originated in Algeria and gained worldwide acclaim.'
+    ],
+    badgeTitle: 'Sahara Sovereign',
+    population: '45 Million',
+    mapCoords: { x: 49, y: 40 }
+  },
+  {
+    code: 'BE',
+    name: 'Belgium',
+    flag: '🇧🇪',
+    capital: 'Brussels',
+    continent: 'Europe',
+    languages: ['Dutch', 'French', 'German'],
+    traditionalFoods: ['Moules-Frites', 'Belgian Waffles', 'Praline Chocolates', 'Carbonnade Flamande'],
+    landmarks: ['Grand Place (Brussels)', 'Atomium', 'Belfry of Bruges', 'Gravensteen Castle'],
+    facts: [
+      'Belgium produces over 220,000 tons of gourmet chocolate every year.',
+      'Brussels hosts the headquarters of the European Union and NATO.',
+      'The saxophone was invented by Belgian instrument maker Adolphe Sax in the 1840s.',
+      'Franco-Belgian comics created iconic characters like Tintin and The Smurfs.'
+    ],
+    badgeTitle: 'Flanders Artisan',
+    population: '11.7 Million',
+    mapCoords: { x: 49, y: 31 }
+  },
+  {
+    code: 'CH',
+    name: 'Switzerland',
+    flag: '🇨🇭',
+    capital: 'Bern',
+    continent: 'Europe',
+    languages: ['German', 'French', 'Italian', 'Romansh'],
+    traditionalFoods: ['Cheese Fondue', 'Raclette', 'Rösti', 'Swiss Chocolate'],
+    landmarks: ['The Matterhorn', 'Jungfraujoch', 'Chapel Bridge (Lucerne)', 'Lake Geneva'],
+    facts: [
+      'Switzerland has four official national languages reflecting its rich cultural crossroads.',
+      'The Swiss flag is one of only two square sovereign national flags in the world.',
+      'Switzerland is home to CERN, where the World Wide Web was invented by Tim Berners-Lee.',
+      'The Gotthard Base Tunnel is the longest and deepest railway tunnel in the world at 57 km.'
+    ],
+    badgeTitle: 'Alpine Guardian',
+    population: '8.8 Million',
+    mapCoords: { x: 50, y: 33 }
+  },
+  {
+    code: 'NL',
+    name: 'Netherlands',
+    flag: '🇳🇱',
+    capital: 'Amsterdam',
+    continent: 'Europe',
+    languages: ['Dutch', 'Frisian'],
+    traditionalFoods: ['Stroopwafel', 'Bitterballen', 'Poffertjes', 'Gouda & Edam Cheese'],
+    landmarks: ['Amsterdam Canal Ring', 'Kinderdijk Windmills', 'Keukenhof Gardens', 'Rijksmuseum'],
+    facts: [
+      'Roughly one-third of the Netherlands lies below sea level, protected by an ingenious system of dikes and polders.',
+      'There are more bicycles than people in the Netherlands.',
+      'Dutch Golden Age masters like Rembrandt, Vermeer, and Van Gogh revolutionized world art.',
+      'The Netherlands is the world’s largest exporter of tulips and fresh flowers.'
+    ],
+    badgeTitle: 'Windmill Virtuoso',
+    population: '17.8 Million',
+    mapCoords: { x: 49, y: 30 }
+  },
+  {
+    code: 'SA',
+    name: 'Saudi Arabia',
+    flag: '🇸🇦',
+    capital: 'Riyadh',
+    continent: 'Asia',
+    languages: ['Arabic'],
+    traditionalFoods: ['Kabsa', 'Mandi', 'Mutabbaq', 'Arabic Qahwa with Dates'],
+    landmarks: ['Hegra (AlUla)', 'Diriyah (At-Turaif)', 'Edge of the World', 'Red Sea Coral Reefs'],
+    facts: [
+      'AlUla is home to Hegra, a monumental Nabataean archaeological site with over 100 rock-cut tombs.',
+      'Rub’ al Khali (The Empty Quarter) is the largest contiguous sand desert on Earth.',
+      'Serving spiced Arabic coffee (Qahwa) with dates is a cherished emblem of Arabian generosity.',
+      'The Arabian horse is one of the oldest and most prized horse breeds in human history.'
+    ],
+    badgeTitle: 'Oasis Falconer',
+    population: '36 Million',
+    mapCoords: { x: 60, y: 44 }
+  },
+  {
+    code: 'AE',
+    name: 'United Arab Emirates',
+    flag: '🇦🇪',
+    capital: 'Abu Dhabi',
+    continent: 'Asia',
+    languages: ['Arabic', 'English'],
+    traditionalFoods: ['Machboos', 'Luqaimat', 'Harees', 'Al Harees'],
+    landmarks: ['Burj Khalifa', 'Sheikh Zayed Grand Mosque', 'Louvre Abu Dhabi', 'Hajar Mountains'],
+    facts: [
+      'The Burj Khalifa in Dubai is the tallest structure in the world at 828 meters.',
+      'Traditional pearl diving and dhow sailing formed the maritime backbone of the Emirates for centuries.',
+      'The UAE launched the Hope Probe (Al-Amal), the Arab world’s first interplanetary mission to Mars.',
+      'Falconry is a deeply respected heritage sport across the Emirates.'
+    ],
+    badgeTitle: 'Emirates Visionary',
+    population: '10 Million',
+    mapCoords: { x: 63, y: 45 }
   }
 ];
 
@@ -482,8 +596,45 @@ export const COUNTRIES_MAP = new Map<string, CountryData>(
   COUNTRIES.map((c) => [c.code, c])
 );
 
+function isoToEmoji(code: string): string {
+  const clean = (code || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(clean)) return '🌍';
+  const offset = 127397;
+  return String.fromCodePoint(clean.charCodeAt(0) + offset, clean.charCodeAt(1) + offset);
+}
+
 export function getCountryByCode(code: string): CountryData | undefined {
-  return COUNTRIES_MAP.get(code.toUpperCase());
+  if (!code) return undefined;
+  const upper = code.trim().toUpperCase();
+  const existing = COUNTRIES_MAP.get(upper);
+  if (existing) return existing;
+
+  if (/^[A-Z]{2}$/.test(upper)) {
+    let resolvedName = upper;
+    if (typeof Intl !== 'undefined' && typeof Intl.DisplayNames !== 'undefined') {
+      try {
+        const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+        resolvedName = regionNames.of(upper) || upper;
+      } catch {
+        resolvedName = upper;
+      }
+    }
+    return {
+      code: upper,
+      name: resolvedName,
+      flag: isoToEmoji(upper),
+      capital: resolvedName,
+      continent: 'Europe',
+      languages: ['Local & International Languages'],
+      traditionalFoods: ['Traditional National Dish'],
+      landmarks: ['Historic Cultural Landmark'],
+      facts: [`${resolvedName} is a vibrant nation with rich cultural traditions and heritage.`],
+      badgeTitle: `${resolvedName} Explorer`,
+      population: 'Global Nation',
+      mapCoords: { x: 50, y: 40 },
+    };
+  }
+  return undefined;
 }
 
 export function getRandomCountry(): CountryData {

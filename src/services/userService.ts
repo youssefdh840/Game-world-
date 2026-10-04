@@ -15,6 +15,7 @@ import {
 import { db, auth } from './firebase';
 import { UserProfile, PassportStamp } from '../types/game';
 import { getCountryByCode } from './countryData';
+import { getSyncDetectedCountry } from './geolocationService';
 import { BADGES } from './badgesData';
 
 export function getTodayDateString(): string {
@@ -115,7 +116,8 @@ export function normalizeUserProfile(raw: Partial<UserProfile> | null | undefine
     (raw as { id?: string } | undefined)?.id ||
     auth.currentUser?.uid ||
     fallbackUid;
-  const countryCode = raw?.countryCode || 'TN';
+  const syncGeo = getSyncDetectedCountry();
+  const countryCode = (raw?.countryCode || syncGeo.countryCode || 'TN').toUpperCase();
   const countryInfo = getCountryByCode(countryCode);
 
   const rawGamesWon =
@@ -142,8 +144,8 @@ export function normalizeUserProfile(raw: Partial<UserProfile> | null | undefine
     email: raw?.email,
     avatar: raw?.avatar || DEFAULT_AVATAR_URL,
     countryCode,
-    countryName: raw?.countryName || countryInfo?.name || 'Tunisia',
-    countryFlag: raw?.countryFlag || countryInfo?.flag || '🇹🇳',
+    countryName: countryInfo?.name || raw?.countryName || syncGeo.countryName || 'Tunisia',
+    countryFlag: countryInfo?.flag || raw?.countryFlag || syncGeo.countryFlag || '🇹🇳',
     bio: raw?.bio || 'Passionate world traveler and quiz challenger!',
     preferredLanguage: raw?.preferredLanguage || 'English',
     age: raw?.age,

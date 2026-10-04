@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types/game';
 import { useAuth } from '../context/AuthContext';
-import { COUNTRIES } from '../services/countryData';
+import { COUNTRIES, getCountryByCode } from '../services/countryData';
 import { BADGES } from '../services/badgesData';
 import { calculateLevel, subscribeToUserProfile } from '../services/userService';
 import { sounds } from '../services/soundEffects';
@@ -82,7 +82,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     setSaving(true);
     sounds.playPop();
 
-    const selectedCountry = COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
+    const selectedCountry = getCountryByCode(countryCode) || COUNTRIES[0];
 
     try {
       await updateProfile({

@@ -14,6 +14,8 @@ import { signInAnonymously } from 'firebase/auth';
 import { db, auth } from './firebase';
 import { UserProfile, GameCategory, GameRoom } from '../types/game';
 import { fetchDynamicGameQuestions } from './questionService';
+import { detectUserCountry, getSyncDetectedCountry } from './geolocationService';
+import { getCountryByCode } from './countryData';
 
 const DEFAULT_AVATAR =
   'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80';
@@ -66,8 +68,15 @@ async function ensurePlayerIdentity(user?: Partial<UserProfile>): Promise<{
     auth.currentUser?.photoURL ||
     DEFAULT_AVATAR;
 
-  const countryCode = (user?.countryCode && user.countryCode.trim()) || 'TN';
-  const countryFlag = (user?.countryFlag && user.countryFlag.trim()) || '🇹🇳';
+  const geo = await detectUserCountry().catch(() => getSyncDetectedCountry());
+  const rawCode = (user?.countryCode && user.countryCode.trim()) || geo.countryCode || 'TN';
+  const resolvedCountry = getCountryByCode(rawCode);
+  const countryCode = resolvedCountry?.code || rawCode.toUpperCase();
+  const countryFlag =
+    resolvedCountry?.flag ||
+    (user?.countryFlag && user.countryFlag.trim()) ||
+    geo.countryFlag ||
+    '🇹🇳';
   const level = typeof user?.level === 'number' && !isNaN(user.level) ? user.level : 1;
 
   return {

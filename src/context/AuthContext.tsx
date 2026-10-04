@@ -19,7 +19,13 @@ import {
   updateUserProfile,
   normalizeUserProfile,
 } from '../services/userService';
-import { COUNTRIES } from '../services/countryData';
+import { COUNTRIES, getCountryByCode } from '../services/countryData';
+import {
+  detectUserCountry,
+  getSyncDetectedCountry,
+  hasManualCountrySelection,
+  markManualCountrySelection,
+} from '../services/geolocationService';
 
 interface AuthContextType {
   firebaseUser: FirebaseUser | null;
@@ -37,16 +43,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const DEFAULT_GUEST_COUNTRY = COUNTRIES.find((c) => c.code === 'TN') || COUNTRIES[0];
-
 function createFallbackProfile(uid: string = 'guest_' + Math.random().toString(36).substring(2, 8)): UserProfile {
+  const detected = getSyncDetectedCountry();
   return {
     uid,
     username: 'Explorer_' + uid.slice(-4),
     avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80',
-    countryCode: DEFAULT_GUEST_COUNTRY.code,
-    countryName: DEFAULT_GUEST_COUNTRY.name,
-    countryFlag: DEFAULT_GUEST_COUNTRY.flag,
+    countryCode: detected.countryCode,
+    countryName: detected.countryName,
+    countryFlag: detected.countryFlag,
     bio: 'Passionate world traveler and quiz challenger!',
     preferredLanguage: 'English',
     level: 1,
@@ -54,7 +59,7 @@ function createFallbackProfile(uid: string = 'guest_' + Math.random().toString(3
     coins: 100,
     gamesPlayed: 0,
     gamesWon: 0,
-    discoveredCountries: [DEFAULT_GUEST_COUNTRY.code],
+    discoveredCountries: [detected.countryCode],
     unlockedBadges: [],
     dailyStreak: 1,
     role: 'user',
@@ -131,6 +136,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+    detectUserCountry().then((geo) => {
+      if (!isMounted || !geo || geo.source === 'fallback') return;
+      if (hasManualCountrySelection()) return;
+
+      setUserProfile((prev) => {
+        if (!prev) return prev;
+        if (prev.countryCode === geo.countryCode && prev.countryFlag === geo.countryFlag) {
+          return prev;
+        }
+        const discovered = Array.from(new Set([...(prev.discoveredCountries || []), geo.countryCode]));
+        const next: UserProfile = {
+          ...prev,
+          countryCode: geo.countryCode,
+          countryName: geo.countryName,
+          countryFlag: geo.countryFlag,
+          discoveredCountries: discovered,
+        };
+        try {
+          localStorage.setItem('wc_cached_profile', JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+        if (prev.uid && !prev.uid.startsWith('guest_')) {
+          updateUserProfile(prev.uid, {
+            countryCode: geo.countryCode,
+            countryName: geo.countryName,
+            countryFlag: geo.countryFlag,
+            discoveredCountries: discovered,
+          }).catch(() => {});
+        }
+        return next;
+      });
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     let unsubProfile: (() => void) | null = null;
     let isMounted = true;
 
@@ -141,9 +186,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (user) {
         // Fetch or subscribe to user profile
         try {
-          const profile = await getUserProfile(user.uid);
+          const [profile, detectedGeo] = await Promise.all([
+            getUserProfile(user.uid),
+            detectUserCountry(),
+          ]);
+
           if (profile && isMounted) {
-            const syncedProfile: UserProfile = { ...profile, uid: user.uid };
+            let syncedProfile: UserProfile = { ...profile, uid: user.uid };
+
+            // If user was previously defaulted to TN and hasn't manually locked a country,
+            // dynamically update their profile to their real IP-detected country (e.g. CA, FR)
+            if (
+              !hasManualCountrySelection() &&
+              detectedGeo.source !== 'fallback' &&
+              syncedProfile.countryCode !== detectedGeo.countryCode &&
+              (!syncedProfile.countryCode || syncedProfile.countryCode === 'TN')
+            ) {
+              const updatedDiscovered = Array.from(
+                new Set([...(syncedProfile.discoveredCountries || []), detectedGeo.countryCode])
+              );
+              syncedProfile = {
+                ...syncedProfile,
+                countryCode: detectedGeo.countryCode,
+                countryName: detectedGeo.countryName,
+                countryFlag: detectedGeo.countryFlag,
+                discoveredCountries: updatedDiscovered,
+              };
+              await updateUserProfile(user.uid, {
+                countryCode: detectedGeo.countryCode,
+                countryName: detectedGeo.countryName,
+                countryFlag: detectedGeo.countryFlag,
+                discoveredCountries: updatedDiscovered,
+              });
+            }
+
             setUserProfile(syncedProfile);
             try {
               localStorage.setItem('wc_cached_profile', JSON.stringify(syncedProfile));
@@ -151,16 +227,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               // ignore
             }
           } else {
-            // New user without document yet
-            const defaultCountry = COUNTRIES.find((c) => c.code === 'TN') || COUNTRIES[0];
+            // New user without document yet — use real IP geolocation
+            const geo = detectedGeo || (await detectUserCountry());
+            const countryInfo = getCountryByCode(geo.countryCode) || {
+              code: geo.countryCode,
+              name: geo.countryName,
+              flag: geo.countryFlag,
+            };
             const newProf: UserProfile = {
               uid: user.uid,
               username: user.displayName || `Explorer_${user.uid.slice(0, 4)}`,
               ...(user.email ? { email: user.email } : {}),
               avatar: user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80',
-              countryCode: defaultCountry.code,
-              countryName: defaultCountry.name,
-              countryFlag: defaultCountry.flag,
+              countryCode: countryInfo.code,
+              countryName: countryInfo.name,
+              countryFlag: countryInfo.flag,
               bio: 'Passionate world traveler and quiz challenger!',
               preferredLanguage: 'English',
               level: 1,
@@ -168,7 +249,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               coins: 100,
               gamesPlayed: 0,
               gamesWon: 0,
-              discoveredCountries: [defaultCountry.code],
+              discoveredCountries: [countryInfo.code],
               unlockedBadges: [],
               dailyStreak: 1,
               role: user.email === 'youssefdh840@gmail.com' ? 'admin' : 'user',
@@ -240,7 +321,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ) => {
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, pass);
-      const selectedCountry = COUNTRIES.find((c) => c.code === profileData.countryCode) || COUNTRIES[0];
+      const geo = await detectUserCountry();
+      const targetCode = profileData.countryCode || geo.countryCode;
+      if (profileData.countryCode) {
+        markManualCountrySelection(profileData.countryCode);
+      }
+      const selectedCountry = getCountryByCode(targetCode) || COUNTRIES[0];
 
       const newProfile: UserProfile = {
         uid: cred.user.uid,
@@ -284,7 +370,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('Firebase anonymous auth skipped, running with local guest session:', err);
     }
 
-    const selectedCountry = COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
+    const geo = await detectUserCountry();
+    const targetCode = countryCode || geo.countryCode;
+    if (countryCode) {
+      markManualCountrySelection(countryCode);
+    }
+    const selectedCountry = getCountryByCode(targetCode) || COUNTRIES[0];
 
     const guestProfile: UserProfile = {
       uid: guestUid,
@@ -338,6 +429,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateProfile = async (updates: Partial<UserProfile>) => {
+    if (updates.countryCode) {
+      markManualCountrySelection(updates.countryCode);
+    }
     // 1. Immediately update React state so UI reflects changes instantly
     setUserProfile((prev) => {
       if (!prev) return null;
