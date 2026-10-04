@@ -232,7 +232,9 @@ export function subscribeToRoomMessages(
   roomId: string,
   callback: (messages: ChatMessage[]) => void
 ) {
-  const path = `gameRooms/${roomId}/messages`;
+  if (!roomId || roomId.startsWith('room_bot_')) {
+    return () => {};
+  }
   const q = query(
     collection(db, 'gameRooms', roomId, 'messages'),
     orderBy('createdAt', 'asc'),
@@ -249,7 +251,7 @@ export function subscribeToRoomMessages(
       callback(messages);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      console.warn(`Chat messages snapshot warning (${roomId}):`, error);
     }
   );
 }
@@ -260,40 +262,39 @@ export async function sendRoomChatMessage(
   text: string,
   type: 'text' | 'emoji' | 'system' = 'text'
 ) {
-  const path = `gameRooms/${roomId}/messages`;
+  if (!roomId || roomId.startsWith('room_bot_')) return;
   // Basic profanity / safety filtering
   const sanitizedText = sanitizeText(text);
 
-  const messageData = {
+  const messageData = sanitizeUpdates({
     roomId,
-    senderId: sender.uid,
-    senderUsername: sender.username,
-    senderAvatar: sender.avatar,
-    senderCountryFlag: sender.countryFlag,
+    senderId: sender.uid || auth.currentUser?.uid || 'player',
+    senderUsername: sender.username || 'Explorer',
+    senderAvatar: sender.avatar || '',
+    senderCountryFlag: sender.countryFlag || '🌍',
     text: sanitizedText,
     type,
     createdAt: new Date().toISOString(),
-  };
+  });
 
   try {
     await addDoc(collection(db, 'gameRooms', roomId, 'messages'), messageData);
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
+    console.warn(`Could not send chat message (${roomId}):`, error);
   }
 }
 
 export async function reportUser(report: Omit<ReportItem, 'id' | 'createdAt' | 'status'>) {
-  const path = 'reports';
-  const data = {
+  const data = sanitizeUpdates({
     ...report,
     status: 'pending',
     createdAt: new Date().toISOString(),
-  };
+  });
 
   try {
     await addDoc(collection(db, 'reports'), data);
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
+    console.warn('Could not submit report:', error);
   }
 }
 

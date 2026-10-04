@@ -1,7 +1,21 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  memoryLocalCache,
+  setLogLevel,
+  doc,
+  getDocFromServer,
+} from 'firebase/firestore';
 import baseFirebaseConfig from '../../firebase-applet-config.json';
+
+// Silence noisy internal @firebase/firestore WebChannel transport retry logs
+try {
+  setLogLevel('silent');
+} catch {
+  // ignore
+}
 
 export interface FirebaseConfigType {
   projectId: string;
@@ -55,10 +69,32 @@ export function resetFirebaseConfig(): void {
 const activeConfig = getActiveFirebaseConfig();
 const app = getApps().length === 0 ? initializeApp(activeConfig) : getApps()[0];
 
-export const db =
-  activeConfig.firestoreDatabaseId && activeConfig.firestoreDatabaseId !== '(default)'
-    ? getFirestore(app, activeConfig.firestoreDatabaseId)
-    : getFirestore(app);
+function createFirestoreInstance() {
+  const dbId =
+    activeConfig.firestoreDatabaseId && activeConfig.firestoreDatabaseId !== '(default)'
+      ? activeConfig.firestoreDatabaseId
+      : undefined;
+
+  try {
+    return dbId
+      ? initializeFirestore(
+          app,
+          {
+            experimentalAutoDetectLongPolling: true,
+            localCache: memoryLocalCache(),
+          },
+          dbId
+        )
+      : initializeFirestore(app, {
+          experimentalAutoDetectLongPolling: true,
+          localCache: memoryLocalCache(),
+        });
+  } catch {
+    return dbId ? getFirestore(app, dbId) : getFirestore(app);
+  }
+}
+
+export const db = createFirestoreInstance();
 
 export const auth = getAuth(app);
 
@@ -191,12 +227,8 @@ export async function testConnection(): Promise<boolean> {
     return true;
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client is offline or network restricted.');
       return false;
     }
     return true;
   }
 }
-
-// Test connection silently in background
-testConnection().catch(() => {});
