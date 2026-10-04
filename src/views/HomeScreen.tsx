@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { calculateLevel } from '../services/userService';
+import { calculateLevel, hasAttemptedDailyQuestToday } from '../services/userService';
 import {
   Gamepad2,
   BookMarked,
@@ -13,6 +13,7 @@ import {
   ArrowRight,
   Zap,
   LogIn,
+  CheckCircle2,
 } from 'lucide-react';
 import { sounds } from '../services/soundEffects';
 
@@ -33,6 +34,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const levelInfo = calculateLevel(userProfile?.xp || 0);
   const discoveredCount = userProfile?.discoveredCountries?.length || 1;
+  const dailyCompletedToday = hasAttemptedDailyQuestToday(userProfile);
+  const totalWins = userProfile?.victories ?? userProfile?.gamesWon ?? 0;
 
   return (
     <div className="space-y-5 pb-24 animate-fade-in">
@@ -81,7 +84,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <span>{userProfile?.countryName || 'Global Wanderer'}</span>
                 <span>•</span>
                 <span className="text-amber-400 font-bold">
-                  {userProfile?.gamesWon || 0} Wins
+                  {totalWins} Wins
                 </span>
               </p>
             </div>
@@ -212,27 +215,51 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <span className="text-xl">🇲🇽</span>
             <div>
               <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">
-                DAILY CHALLENGE
+                DAILY CHALLENGE • 1 ATTEMPT / DAY
               </span>
               <h4 className="text-sm font-black text-white">Discover Mexico Today</h4>
             </div>
           </div>
-          <span className="text-xs font-extrabold text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-lg border border-amber-500/30">
-            +300 XP
-          </span>
+          {dailyCompletedToday ? (
+            <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-300 bg-emerald-500/20 px-2.5 py-0.5 rounded-lg border border-emerald-500/30">
+              <CheckCircle2 className="w-3 h-3" />
+              <span>Completed</span>
+            </span>
+          ) : (
+            <span className="text-xs font-extrabold text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-lg border border-amber-500/30">
+              +300 XP
+            </span>
+          )}
         </div>
         <p className="text-xs text-slate-400 mb-3">
-          Answer 5 cultural questions about Mexico and earn gold coins + unlock the Aztec Luminary badge!
+          {dailyCompletedToday
+            ? "You have completed today's Daily Quest attempt. Come back tomorrow for a brand new destination!"
+            : 'Answer 5 cultural questions about Mexico and earn gold coins + unlock the Aztec Luminary badge!'}
         </p>
         <button
+          disabled={dailyCompletedToday}
           onClick={() => {
+            if (dailyCompletedToday) return;
             sounds.playPop();
             onOpenDailyChallenge();
           }}
-          className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-98 transition-all cursor-pointer"
+          className={`w-full py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md transition-all ${
+            dailyCompletedToday
+              ? 'bg-slate-800 border border-slate-700 text-emerald-400 cursor-not-allowed'
+              : 'bg-amber-500 hover:bg-amber-400 text-slate-950 active:scale-98 cursor-pointer'
+          }`}
         >
-          <span>Start Daily Quest</span>
-          <ArrowRight className="w-3.5 h-3.5" />
+          {dailyCompletedToday ? (
+            <>
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Daily Quest Completed Today</span>
+            </>
+          ) : (
+            <>
+              <span>Start Daily Quest</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </>
+          )}
         </button>
       </div>
 

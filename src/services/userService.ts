@@ -9,11 +9,34 @@ import {
   orderBy,
   limit,
   onSnapshot,
+  increment,
+  arrayUnion,
 } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from './firebase';
+import { db, auth } from './firebase';
 import { UserProfile, PassportStamp } from '../types/game';
 import { getCountryByCode } from './countryData';
 import { BADGES } from './badgesData';
+
+export function getTodayDateString(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+export function hasAttemptedDailyQuestToday(user?: Partial<UserProfile> | null): boolean {
+  const todayStr = getTodayDateString();
+  if (user?.lastAttemptDate === todayStr || user?.lastDailyChallengeDate === todayStr) {
+    return true;
+  }
+  if (typeof window !== 'undefined') {
+    const uid = auth.currentUser?.uid || user?.uid || 'guest';
+    try {
+      const localAttempt = localStorage.getItem(`wc_daily_attempt_${uid}`);
+      if (localAttempt === todayStr) return true;
+    } catch {
+      // ignore
+    }
+  }
+  return false;
+}
 
 // Configurable Level Curve
 export const LEVEL_THRESHOLDS = [
@@ -74,6 +97,18 @@ function sanitizeProfileData<T extends Record<string, unknown>>(obj: T): T {
   return cleaned as T;
 }
 
+function emitLocalProfileUpdate(profile: UserProfile) {
+  if (typeof window !== 'undefined') {
+    try {
+      const clean = sanitizeProfileData(profile as unknown as Record<string, unknown>);
+      localStorage.setItem('wc_cached_profile', JSON.stringify(clean));
+      window.dispatchEvent(new CustomEvent('wc_profile_updated', { detail: profile }));
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export function normalizeUserProfile(raw: Partial<UserProfile> | null | undefined, fallbackUid: string): UserProfile {
   const resolvedUid =
     raw?.uid ||
@@ -82,6 +117,24 @@ export function normalizeUserProfile(raw: Partial<UserProfile> | null | undefine
     fallbackUid;
   const countryCode = raw?.countryCode || 'TN';
   const countryInfo = getCountryByCode(countryCode);
+
+  const rawGamesWon =
+    typeof raw?.gamesWon === 'number'
+      ? raw.gamesWon
+      : typeof raw?.victories === 'number'
+      ? raw.victories
+      : 0;
+
+  const rawVictories =
+    typeof raw?.victories === 'number'
+      ? raw.victories
+      : rawGamesWon;
+
+  const xpVal = typeof raw?.xp === 'number' ? raw.xp : 0;
+  const computedLevel = calculateLevel(xpVal).level;
+  const levelVal = typeof raw?.level === 'number' ? Math.max(raw.level, computedLevel) : computedLevel;
+
+  const lastAttempt = raw?.lastAttemptDate || raw?.lastDailyChallengeDate;
 
   return {
     uid: resolvedUid,
@@ -94,15 +147,19 @@ export function normalizeUserProfile(raw: Partial<UserProfile> | null | undefine
     bio: raw?.bio || 'Passionate world traveler and quiz challenger!',
     preferredLanguage: raw?.preferredLanguage || 'English',
     age: raw?.age,
-    level: typeof raw?.level === 'number' ? raw.level : 1,
-    xp: typeof raw?.xp === 'number' ? raw.xp : 0,
+    level: levelVal,
+    xp: xpVal,
     coins: typeof raw?.coins === 'number' ? raw.coins : 100,
     gamesPlayed: typeof raw?.gamesPlayed === 'number' ? raw.gamesPlayed : 0,
-    gamesWon: typeof raw?.gamesWon === 'number' ? raw.gamesWon : 0,
+    gamesWon: rawGamesWon,
+    victories: rawVictories,
     discoveredCountries: Array.isArray(raw?.discoveredCountries) ? raw.discoveredCountries : [countryCode],
     unlockedBadges: Array.isArray(raw?.unlockedBadges) ? raw.unlockedBadges : [],
     dailyStreak: typeof raw?.dailyStreak === 'number' ? raw.dailyStreak : 1,
-    lastDailyChallengeDate: raw?.lastDailyChallengeDate,
+    lastDailyChallengeDate: lastAttempt,
+    lastAttemptDate: lastAttempt,
+    dailyQuestCompleted: raw?.dailyQuestCompleted ?? Boolean(lastAttempt === getTodayDateString()),
+    lastDailyScore: typeof raw?.lastDailyScore === 'number' ? raw.lastDailyScore : undefined,
     role: raw?.role || 'user',
     createdAt: raw?.createdAt || new Date().toISOString(),
     lastActiveAt: raw?.lastActiveAt || new Date().toISOString(),
@@ -110,14 +167,15 @@ export function normalizeUserProfile(raw: Partial<UserProfile> | null | undefine
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  if (!uid) return null;
-  if (uid.startsWith('guest_') || !auth.currentUser) {
+  const targetUid = auth.currentUser?.uid || uid;
+  if (!targetUid) return null;
+  if (targetUid.startsWith('guest_') || !auth.currentUser) {
     if (typeof window !== 'undefined') {
       try {
         const cached = localStorage.getItem('wc_cached_profile');
         if (cached) {
           const parsed = JSON.parse(cached) as Partial<UserProfile>;
-          return normalizeUserProfile(parsed, uid);
+          return normalizeUserProfile(parsed, targetUid);
         }
       } catch {
         // ignore
@@ -126,19 +184,19 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     return null;
   }
   try {
-    const snap = await getDoc(doc(db, 'users', uid));
+    const snap = await getDoc(doc(db, 'users', targetUid));
     if (snap.exists()) {
-      return normalizeUserProfile(snap.data() as Partial<UserProfile>, snap.id || uid);
+      return normalizeUserProfile(snap.data() as Partial<UserProfile>, snap.id || targetUid);
     }
     return null;
   } catch (error) {
-    console.warn(`Could not load profile for ${uid} from Firestore:`, error);
+    console.warn(`Could not load profile for ${targetUid} from Firestore:`, error);
     if (typeof window !== 'undefined') {
       try {
         const cached = localStorage.getItem('wc_cached_profile');
         if (cached) {
           const parsed = JSON.parse(cached) as Partial<UserProfile>;
-          return normalizeUserProfile(parsed, uid);
+          return normalizeUserProfile(parsed, targetUid);
         }
       } catch {
         // ignore
@@ -149,20 +207,50 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 }
 
 export function subscribeToUserProfile(uid: string, callback: (profile: UserProfile | null) => void) {
-  if (!uid || uid.startsWith('guest_') || !auth.currentUser) return () => {};
-  return onSnapshot(
-    doc(db, 'users', uid),
-    (snap) => {
-      if (snap.exists()) {
-        callback(normalizeUserProfile(snap.data() as Partial<UserProfile>, snap.id || uid));
-      } else {
-        callback(null);
-      }
-    },
-    (error) => {
-      console.warn(`Profile snapshot warning for ${uid}:`, error);
+  const targetUid = auth.currentUser?.uid || uid;
+  const handleLocalEvent = (e: Event) => {
+    const customEvent = e as CustomEvent<UserProfile>;
+    if (customEvent.detail) {
+      callback(normalizeUserProfile(customEvent.detail, targetUid));
     }
-  );
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('wc_profile_updated', handleLocalEvent);
+  }
+
+  let unsubFirestore: (() => void) | null = null;
+  if (targetUid && !targetUid.startsWith('guest_') && auth.currentUser) {
+    unsubFirestore = onSnapshot(
+      doc(db, 'users', targetUid),
+      (snap) => {
+        if (snap.exists()) {
+          const normalized = normalizeUserProfile(snap.data() as Partial<UserProfile>, snap.id || targetUid);
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem(
+                'wc_cached_profile',
+                JSON.stringify(sanitizeProfileData(normalized as unknown as Record<string, unknown>))
+              );
+            } catch {
+              // ignore
+            }
+          }
+          callback(normalized);
+        }
+      },
+      (error) => {
+        console.warn(`Profile snapshot warning for ${targetUid}:`, error);
+      }
+    );
+  }
+
+  return () => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('wc_profile_updated', handleLocalEvent);
+    }
+    if (unsubFirestore) unsubFirestore();
+  };
 }
 
 export async function createUserProfile(profile: UserProfile): Promise<void> {
@@ -170,47 +258,65 @@ export async function createUserProfile(profile: UserProfile): Promise<void> {
   if (!normalized.uid) return;
 
   const cleanProfile = sanitizeProfileData(normalized as unknown as Record<string, unknown>);
-
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem('wc_cached_profile', JSON.stringify(cleanProfile));
-    } catch {
-      // ignore
-    }
-  }
+  emitLocalProfileUpdate(normalized);
 
   if (normalized.uid.startsWith('guest_') || !auth.currentUser) return;
   try {
-    await setDoc(doc(db, 'users', normalized.uid), cleanProfile);
+    await setDoc(doc(db, 'users', normalized.uid), cleanProfile, { merge: true });
   } catch (error) {
     console.warn(`Could not write user profile to Firestore:`, error);
   }
 }
 
 export async function updateUserProfile(uid: string, updates: Partial<UserProfile>): Promise<void> {
-  if (!uid) return;
+  const targetUid = auth.currentUser?.uid || uid;
+  if (!targetUid) return;
   const cleanUpdates = sanitizeProfileData(updates as Record<string, unknown>);
 
   // Optimistically update local cached profile so UI refreshes immediately
   if (typeof window !== 'undefined') {
     try {
       const cached = localStorage.getItem('wc_cached_profile');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        const updated = normalizeUserProfile({ ...parsed, ...cleanUpdates }, uid);
-        localStorage.setItem('wc_cached_profile', JSON.stringify(sanitizeProfileData(updated as unknown as Record<string, unknown>)));
+      const parsed = cached ? JSON.parse(cached) : {};
+      const updated = normalizeUserProfile({ ...parsed, ...cleanUpdates }, targetUid);
+      emitLocalProfileUpdate(updated);
+    } catch {
+      // ignore
+    }
+  }
+
+  if (targetUid.startsWith('guest_') || !auth.currentUser) return;
+  try {
+    await setDoc(doc(db, 'users', targetUid), cleanUpdates, { merge: true });
+  } catch (error) {
+    console.warn(`Could not update user profile in Firestore:`, error);
+  }
+}
+
+export async function markDailyQuestAttempted(uid: string, score?: number): Promise<void> {
+  const targetUid = auth.currentUser?.uid || uid;
+  const todayStr = getTodayDateString();
+
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(`wc_daily_attempt_${targetUid}`, todayStr);
+      if (uid && uid !== targetUid) {
+        localStorage.setItem(`wc_daily_attempt_${uid}`, todayStr);
       }
     } catch {
       // ignore
     }
   }
 
-  if (uid.startsWith('guest_') || !auth.currentUser) return;
-  try {
-    await setDoc(doc(db, 'users', uid), cleanUpdates, { merge: true });
-  } catch (error) {
-    console.warn(`Could not update user profile in Firestore:`, error);
-  }
+  const updates: Partial<UserProfile> = {
+    lastAttemptDate: todayStr,
+    lastDailyChallengeDate: todayStr,
+    dailyQuestCompleted: true,
+    ...(typeof score === 'number' ? { lastDailyScore: score } : {}),
+    lastActiveAt: new Date().toISOString(),
+  };
+
+  await updateUserProfile(targetUid, updates);
 }
 
 export async function awardGameResults(
@@ -220,29 +326,22 @@ export async function awardGameResults(
   coinsEarned: number,
   opponentCountryCode?: string,
   opponentUsername?: string,
-  opponentAvatar?: string
+  opponentAvatar?: string,
+  extraUpdates?: { isDailyQuest?: boolean; dailyScore?: number }
 ): Promise<{ leveledUp: boolean; newLevel: number; newlyUnlockedCountry?: string; newBadges: string[] }> {
-  const current = await getUserProfile(uid);
-  if (!current) {
-    return { leveledUp: false, newLevel: 1, newBadges: [] };
-  }
+  const targetUid = auth.currentUser?.uid || uid;
+  const current = (await getUserProfile(targetUid)) || normalizeUserProfile({ uid: targetUid }, targetUid);
 
   const oldLevel = calculateLevel(current.xp).level;
-  const newXp = current.xp + xpEarned;
-  const newLevelInfo = calculateLevel(newXp);
-  const leveledUp = newLevelInfo.level > oldLevel;
+  const baseNewXp = (current.xp || 0) + xpEarned;
 
   const gamesPlayed = (current.gamesPlayed || 0) + 1;
   const gamesWon = (current.gamesWon || 0) + (isWinner ? 1 : 0);
   const newCoins = (current.coins || 0) + coinsEarned;
 
-  let discoveredCountries = [...(current.discoveredCountries || [])];
+  const discoveredCountries = [...(current.discoveredCountries || [])];
   let newlyUnlockedCountry: string | undefined;
 
-  // Virtual Passport unlock requirement:
-  // "A country becomes unlocked when:
-  //  1. The player meets another player from that country AND
-  //  2. They successfully complete a game together."
   if (opponentCountryCode && !discoveredCountries.includes(opponentCountryCode.toUpperCase())) {
     const code = opponentCountryCode.toUpperCase();
     discoveredCountries.push(code);
@@ -251,8 +350,8 @@ export async function awardGameResults(
     // Create passport stamp in subcollection
     const countryInfo = getCountryByCode(code);
     const stamp: PassportStamp = {
-      id: `${uid}_${code}`,
-      userId: uid,
+      id: `${targetUid}_${code}`,
+      userId: targetUid,
       countryCode: code,
       countryName: countryInfo?.name || code,
       countryFlag: countryInfo?.flag || '🌍',
@@ -268,7 +367,7 @@ export async function awardGameResults(
     // Save locally
     if (typeof window !== 'undefined') {
       try {
-        const localKey = `wc_stamps_${uid}`;
+        const localKey = `wc_stamps_${targetUid}`;
         const existing: PassportStamp[] = JSON.parse(localStorage.getItem(localKey) || '[]');
         if (!existing.some((s) => s.countryCode === code)) {
           existing.push(stamp);
@@ -279,9 +378,9 @@ export async function awardGameResults(
       }
     }
 
-    if (auth.currentUser && !uid.startsWith('guest_')) {
+    if (auth.currentUser && !targetUid.startsWith('guest_')) {
       try {
-        await setDoc(doc(db, 'users', uid, 'passport', code), stamp);
+        await setDoc(doc(db, 'users', targetUid, 'passport', code), stamp);
       } catch {
         // Non-fatal if stamp write fails
       }
@@ -292,27 +391,22 @@ export async function awardGameResults(
   const unlockedBadges = [...(current.unlockedBadges || [])];
   const newBadges: string[] = [];
 
-  // Badge: First friend
   if (gamesPlayed >= 1 && !unlockedBadges.includes('first_friend')) {
     unlockedBadges.push('first_friend');
     newBadges.push('first_friend');
   }
-  // Badge: First journey
   if (discoveredCountries.length >= 1 && !unlockedBadges.includes('first_journey')) {
     unlockedBadges.push('first_journey');
     newBadges.push('first_journey');
   }
-  // Badge: World Traveler
   if (discoveredCountries.length >= 5 && !unlockedBadges.includes('world_traveler')) {
     unlockedBadges.push('world_traveler');
     newBadges.push('world_traveler');
   }
-  // Badge: Global Explorer
   if (discoveredCountries.length >= 10 && !unlockedBadges.includes('global_explorer')) {
     unlockedBadges.push('global_explorer');
     newBadges.push('global_explorer');
   }
-  // Badge: Champion
   if (gamesWon >= 10 && !unlockedBadges.includes('champion')) {
     unlockedBadges.push('champion');
     newBadges.push('champion');
@@ -325,19 +419,79 @@ export async function awardGameResults(
     if (b) bonusBadgeXp += b.xpReward;
   });
 
-  const finalXp = newXp + bonusBadgeXp;
+  const totalXpDelta = xpEarned + bonusBadgeXp;
+  const finalXp = baseNewXp + bonusBadgeXp;
   const finalLevel = calculateLevel(finalXp).level;
+  const todayStr = getTodayDateString();
 
-  await updateUserProfile(uid, {
-    xp: finalXp,
-    level: finalLevel,
-    coins: newCoins,
-    gamesPlayed,
-    gamesWon,
-    discoveredCountries,
-    unlockedBadges,
-    lastActiveAt: new Date().toISOString(),
-  });
+  // Immediately update local cached profile and emit event for instant UI feedback
+  const nextLocalProfile: UserProfile = normalizeUserProfile(
+    {
+      ...current,
+      uid: targetUid,
+      xp: finalXp,
+      level: finalLevel,
+      coins: newCoins,
+      gamesPlayed,
+      gamesWon,
+      victories: gamesWon,
+      discoveredCountries,
+      unlockedBadges,
+      ...(extraUpdates?.isDailyQuest
+        ? {
+            lastAttemptDate: todayStr,
+            lastDailyChallengeDate: todayStr,
+            dailyQuestCompleted: true,
+            lastDailyScore: extraUpdates.dailyScore,
+            dailyStreak: (current.dailyStreak || 1) + 1,
+          }
+        : {}),
+      lastActiveAt: new Date().toISOString(),
+    },
+    targetUid
+  );
+  emitLocalProfileUpdate(nextLocalProfile);
+
+  // Perform atomic Firestore update using increment()
+  if (auth.currentUser && !targetUid.startsWith('guest_')) {
+    const userRef = doc(db, 'users', targetUid);
+    const atomicUpdates: Record<string, unknown> = {
+      uid: targetUid,
+      xp: increment(totalXpDelta),
+      coins: increment(coinsEarned),
+      gamesPlayed: increment(1),
+      gamesWon: increment(isWinner ? 1 : 0),
+      victories: increment(isWinner ? 1 : 0),
+      level: finalLevel,
+      discoveredCountries: discoveredCountries.length > 0 ? arrayUnion(...discoveredCountries) : discoveredCountries,
+      unlockedBadges: unlockedBadges.length > 0 ? arrayUnion(...unlockedBadges) : unlockedBadges,
+      ...(extraUpdates?.isDailyQuest
+        ? {
+            lastAttemptDate: todayStr,
+            lastDailyChallengeDate: todayStr,
+            dailyQuestCompleted: true,
+            ...(typeof extraUpdates.dailyScore === 'number' ? { lastDailyScore: extraUpdates.dailyScore } : {}),
+            dailyStreak: increment(1),
+          }
+        : {}),
+      lastActiveAt: new Date().toISOString(),
+    };
+
+    try {
+      await updateDoc(userRef, sanitizeProfileData(atomicUpdates));
+    } catch {
+      // Fallback if document does not exist yet
+      try {
+        await setDoc(
+          userRef,
+          sanitizeProfileData(nextLocalProfile as unknown as Record<string, unknown>),
+          { merge: true }
+        );
+      } catch (err) {
+        console.warn('Could not persist atomic game results to Firestore:', err);
+      }
+    }
+  }
 
   return {
     leveledUp: finalLevel > oldLevel,

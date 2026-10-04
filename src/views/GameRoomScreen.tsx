@@ -344,7 +344,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
     };
-  }, [room.currentRound, room.id, currentQ?.id]);
+  }, [room.currentRound, room.id, currentQ?.id, room.status]);
 
   // Monitor when both players have submitted answers
   useEffect(() => {
@@ -432,8 +432,11 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     submitPlayerAnswer(room.id, activeUid, option, timeTaken, isCorrect, roomRef.current);
   };
 
+  const hasAwardedRef = useRef<boolean>(false);
+
   const handleMatchFinished = async () => {
-    if (awardedResults) return;
+    if (awardedResults || hasAwardedRef.current) return;
+    hasAwardedRef.current = true;
 
     sounds.playVictory();
     try {
@@ -446,22 +449,30 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       // confetti
     }
 
-    if (room.questions && room.questions.length > 0) {
-      recordQuestionsAnsweredInSession(room.questions.map((q) => q.id));
+    const latestRoom = roomRef.current;
+    if (latestRoom.questions && latestRoom.questions.length > 0) {
+      recordQuestionsAnsweredInSession(latestRoom.questions.map((q) => q.id));
     }
 
-    const myScore = isHost ? room.hostScore : room.guestScore;
-    const opponentScore = isHost ? room.guestScore : room.hostScore;
-    const isWinner = myScore >= opponentScore;
+    const activeUid = auth.currentUser?.uid || user.uid;
+    const isHostPlayer = isHostRef.current;
+    const myScore = (isHostPlayer ? latestRoom.hostScore : latestRoom.guestScore) || 0;
+    const opponentScore = (isHostPlayer ? latestRoom.guestScore : latestRoom.hostScore) || 0;
+
+    const forfeitedById = latestRoom.forfeitBy || latestRoom.abandonedBy;
+    const isWinner = forfeitedById
+      ? forfeitedById !== activeUid && forfeitedById !== user.uid
+      : myScore >= opponentScore;
+
     const xpReward = isWinner ? 250 : 100;
     const coinsReward = isWinner ? 50 : 20;
 
-    const opponentCountryCode = isHost ? room.guestCountryCode : room.hostCountryCode;
-    const opponentUsername = isHost ? room.guestUsername : room.hostUsername;
-    const opponentAvatar = isHost ? room.guestAvatar : room.hostAvatar;
+    const opponentCountryCode = isHostPlayer ? latestRoom.guestCountryCode : latestRoom.hostCountryCode;
+    const opponentUsername = isHostPlayer ? latestRoom.guestUsername : latestRoom.hostUsername;
+    const opponentAvatar = isHostPlayer ? latestRoom.guestAvatar : latestRoom.hostAvatar;
 
     const res = await awardGameResults(
-      user.uid,
+      activeUid,
       isWinner,
       xpReward,
       coinsReward,

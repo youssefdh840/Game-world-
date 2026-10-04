@@ -109,6 +109,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    const handleLocalProfileUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<UserProfile>;
+      if (customEvent.detail) {
+        setUserProfile((prev) =>
+          normalizeUserProfile(
+            customEvent.detail,
+            auth.currentUser?.uid || customEvent.detail.uid || prev?.uid || ''
+          )
+        );
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('wc_profile_updated', handleLocalProfileUpdate);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('wc_profile_updated', handleLocalProfileUpdate);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     let unsubProfile: (() => void) | null = null;
     let isMounted = true;
 

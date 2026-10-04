@@ -3,7 +3,7 @@ import { UserProfile } from '../types/game';
 import { useAuth } from '../context/AuthContext';
 import { COUNTRIES } from '../services/countryData';
 import { BADGES } from '../services/badgesData';
-import { calculateLevel } from '../services/userService';
+import { calculateLevel, subscribeToUserProfile } from '../services/userService';
 import { sounds } from '../services/soundEffects';
 import { FirebaseConfigModal } from '../components/FirebaseConfigModal';
 import {
@@ -39,6 +39,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   setSoundEnabled,
 }) => {
   const { logout, firebaseUser, updateProfile } = useAuth();
+  const [liveUser, setLiveUser] = useState<UserProfile>(user);
   const [isEditing, setIsEditing] = useState(false);
   const [username, setUsername] = useState(user.username);
   const [countryCode, setCountryCode] = useState(user.countryCode);
@@ -48,7 +49,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isFirebaseConfigOpen, setIsFirebaseConfigOpen] = useState(false);
 
+  // Sync with prop updates
   useEffect(() => {
+    setLiveUser(user);
     if (!isEditing) {
       setUsername(user.username);
       setCountryCode(user.countryCode);
@@ -57,13 +60,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     }
   }, [user, isEditing]);
 
-  const levelInfo = calculateLevel(user.xp);
+  // Direct real-time Firestore onSnapshot listener for immediate stats/XP/streak updates
+  useEffect(() => {
+    const activeUid = firebaseUser?.uid || user.uid;
+    if (!activeUid) return;
+    const unsub = subscribeToUserProfile(activeUid, (updatedProfile) => {
+      if (updatedProfile) {
+        setLiveUser(updatedProfile);
+      }
+    });
+    return () => unsub();
+  }, [firebaseUser?.uid, user.uid]);
+
+  const totalVictories = liveUser.victories ?? liveUser.gamesWon ?? 0;
+  const totalGamesPlayed = liveUser.gamesPlayed || 0;
+  const levelInfo = calculateLevel(liveUser.xp || 0);
   const winRate =
-    user.gamesPlayed > 0
-      ? Math.round(((user.gamesWon || 0) / user.gamesPlayed) * 100)
+    totalGamesPlayed > 0
+      ? Math.round((totalVictories / totalGamesPlayed) * 100)
       : 0;
 
-  const unlockedBadgeIds = new Set(user.unlockedBadges || []);
+  const unlockedBadgeIds = new Set(liveUser.unlockedBadges || []);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,21 +125,21 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
         <div className="relative inline-block mb-2">
           <img
-            src={user.avatar}
-            alt={user.username}
+            src={liveUser.avatar}
+            alt={liveUser.username}
             className="w-20 h-20 mx-auto rounded-3xl object-cover ring-2 ring-indigo-500 shadow-xl bg-slate-800"
           />
           <span className="absolute -bottom-1 -right-1 text-2xl p-0.5 bg-slate-900 rounded-full shadow">
-            {user.countryFlag}
+            {liveUser.countryFlag}
           </span>
         </div>
 
-        <h2 className="text-xl font-black text-white">{user.username}</h2>
+        <h2 className="text-xl font-black text-white">{liveUser.username}</h2>
         <p className="text-xs text-indigo-300 font-semibold mt-0.5">
-          {user.countryName} • {user.preferredLanguage || 'English'}
+          {liveUser.countryName} • {liveUser.preferredLanguage || 'English'}
         </p>
         <p className="text-xs text-slate-400 mt-2 max-w-xs mx-auto italic">
-          "{user.bio || 'World Challenge traveler ready for cultural duels!'}"
+          "{liveUser.bio || 'World Challenge traveler ready for cultural duels!'}"
         </p>
 
         {/* Level & XP */}
@@ -130,7 +147,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <div className="flex justify-between items-center text-xs mb-1 font-bold">
             <span className="text-amber-400">Level {levelInfo.level}</span>
             <span className="text-slate-400 font-mono">
-              {levelInfo.xpInCurrentLevel} / {levelInfo.nextLevelThreshold - levelInfo.currentLevelBase} XP
+              {levelInfo.xpInCurrentLevel} / {levelInfo.nextLevelThreshold - levelInfo.currentLevelBase} XP ({liveUser.xp || 0} Total XP)
             </span>
           </div>
           <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden p-0.5">
@@ -250,8 +267,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <span className="text-[10px] font-bold uppercase">Games Played</span>
             <Gamepad2 className="w-4 h-4 text-indigo-400" />
           </div>
-          <span className="text-2xl font-black text-white">{user.gamesPlayed || 0}</span>
-          <span className="text-[10px] text-slate-500 mt-1">Total duels entered</span>
+          <span className="text-2xl font-black text-white">{totalGamesPlayed}</span>
+          <span className="text-[10px] text-slate-500 mt-1">Total duels &amp; quests</span>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 flex flex-col justify-between">
@@ -259,7 +276,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <span className="text-[10px] font-bold uppercase">Victories</span>
             <Trophy className="w-4 h-4 text-yellow-400" />
           </div>
-          <span className="text-2xl font-black text-yellow-400">{user.gamesWon || 0}</span>
+          <span className="text-2xl font-black text-yellow-400">{totalVictories}</span>
           <span className="text-[10px] text-slate-500 mt-1">{winRate}% win rate</span>
         </div>
 
@@ -269,7 +286,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <Globe className="w-4 h-4 text-emerald-400" />
           </div>
           <span className="text-2xl font-black text-emerald-400">
-            {user.discoveredCountries?.length || 1}
+            {liveUser.discoveredCountries?.length || 1}
           </span>
           <span className="text-[10px] text-slate-500 mt-1">Country visas stamped</span>
         </div>
@@ -279,7 +296,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <span className="text-[10px] font-bold uppercase">Play Streak</span>
             <Flame className="w-4 h-4 text-amber-400" />
           </div>
-          <span className="text-2xl font-black text-amber-400">{user.dailyStreak || 1}</span>
+          <span className="text-2xl font-black text-amber-400">{liveUser.dailyStreak || 1}</span>
           <span className="text-[10px] text-slate-500 mt-1">Days in a row</span>
         </div>
       </div>

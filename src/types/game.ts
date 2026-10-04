@@ -23,10 +23,14 @@ export interface UserProfile {
   coins: number;
   gamesPlayed: number;
   gamesWon: number;
+  victories?: number;
   discoveredCountries: string[]; // List of country codes
   unlockedBadges: string[];
   dailyStreak: number;
   lastDailyChallengeDate?: string;
+  lastAttemptDate?: string;
+  dailyQuestCompleted?: boolean;
+  lastDailyScore?: number;
   role?: 'user' | 'admin';
   createdAt: string;
   lastActiveAt: string;
