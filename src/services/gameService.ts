@@ -17,6 +17,8 @@ import {
   fetchDynamicGameQuestions,
   recordQuestionsAnsweredInSession,
   clearSessionQuestionHistory,
+  shuffleQuestionOptions,
+  shuffleArraySeeded,
   QuestionFilterOptions,
 } from './questionService';
 
@@ -24,6 +26,8 @@ export {
   fetchDynamicGameQuestions,
   recordQuestionsAnsweredInSession,
   clearSessionQuestionHistory,
+  shuffleQuestionOptions,
+  shuffleArraySeeded,
   type QuestionFilterOptions,
 };
 

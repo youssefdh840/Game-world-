@@ -10,6 +10,7 @@ import {
   reportUser,
   fetchDynamicGameQuestions,
   recordQuestionsAnsweredInSession,
+  shuffleArraySeeded,
   forfeitGame,
 } from '../services/gameService';
 import { awardGameResults } from '../services/userService';
@@ -83,8 +84,17 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const isHostRef = useRef<boolean>(isHost);
   isHostRef.current = isHost;
 
-  // Active question accessor
-  const currentQ = room.currentQuestion || (room.questions && room.questions[room.currentRound - 1]);
+  // Active question accessor with deterministic room-synchronized option shuffling
+  const rawCurrentQ = room.currentQuestion || (room.questions && room.questions[room.currentRound - 1]);
+  const currentQ: Question | undefined = React.useMemo(() => {
+    if (!rawCurrentQ) return undefined;
+    // Deterministically shuffle options seeded by room.id + question.id + round so both players see the exact same randomized A/B/C/D order
+    const seed = `${room.id || 'room'}_${rawCurrentQ.id}_${room.currentRound}`;
+    return {
+      ...rawCurrentQ,
+      options: shuffleArraySeeded(rawCurrentQ.options, seed),
+    };
+  }, [rawCurrentQ?.id, room.id, room.currentRound]);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const roundStartTimeRef = useRef<number>(Date.now());

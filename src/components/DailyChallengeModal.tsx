@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { UserProfile, Question } from '../types/game';
 import { COUNTRIES } from '../services/countryData';
 import { QUESTIONS } from '../services/questionData';
+import { shuffleQuestionOptions } from '../services/questionService';
 import {
   awardGameResults,
   hasAttemptedDailyQuestToday,
@@ -55,14 +56,18 @@ export const DailyChallengeModal: React.FC<DailyChallengeModalProps> = ({
     }
   }, [isOpen, user.lastAttemptDate, user.lastDailyChallengeDate]);
 
-  if (!isOpen) return null;
-
   // Today's spotlight country: Mexico 🇲🇽
   const spotlightCountry = COUNTRIES.find((c) => c.code === 'MX') || COUNTRIES[0];
-  const filtered = QUESTIONS.filter(
-    (q) => q.countryCode === spotlightCountry.code || q.category === 'country_quiz'
-  );
-  const challengeQuestions: Question[] = (filtered.length >= 5 ? filtered : QUESTIONS).slice(0, 5);
+  const challengeQuestions: Question[] = React.useMemo(() => {
+    const filtered = QUESTIONS.filter(
+      (q) => q.countryCode === spotlightCountry.code || q.category === 'country_quiz'
+    );
+    const base = (filtered.length >= 5 ? filtered : QUESTIONS).slice(0, 5);
+    return base.map((q, idx) => shuffleQuestionOptions(q, `daily_${spotlightCountry.code}_${q.id}_${idx}`));
+  }, [spotlightCountry.code, isOpen]);
+
+  if (!isOpen) return null;
+
   const currentQ = challengeQuestions[currentIndex] || challengeQuestions[0];
 
   const handleStartQuest = async () => {

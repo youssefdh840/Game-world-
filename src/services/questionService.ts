@@ -71,6 +71,37 @@ export function shuffleArray<T>(arr: T[]): T[] {
   return copy;
 }
 
+// Deterministic seeded shuffle so both multiplayer clients see identical randomized option orders for any given roomId + questionId
+export function shuffleArraySeeded<T>(arr: T[], seedStr: string): T[] {
+  const copy = [...arr];
+  let hash = 2166136261;
+  for (let i = 0; i < seedStr.length; i++) {
+    hash ^= seedStr.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const nextRand = () => {
+    hash += 0x6d2b79f5;
+    let t = hash;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(nextRand() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+export function shuffleQuestionOptions(q: Question, seed?: string): Question {
+  if (!q || !Array.isArray(q.options) || q.options.length <= 1) return q;
+  const shuffledOptions = seed ? shuffleArraySeeded(q.options, seed) : shuffleArray(q.options);
+  return {
+    ...q,
+    options: shuffledOptions,
+  };
+}
+
 // Map country names mentioned in OpenTDB questions to ISO country codes
 function detectCountryFromText(text: string): { code: string; name: string } | null {
   const lower = text.toLowerCase();
@@ -296,5 +327,6 @@ export async function fetchDynamicGameQuestions(
   // Record chosen IDs into session cache so subsequent games in this session don't repeat them
   recordQuestionsAnsweredInSession(chosen.map((q) => q.id));
 
-  return chosen.slice(0, count);
+  // Randomize multiple-choice options for every question so the correct answer is distributed across A, B, C, and D
+  return chosen.slice(0, count).map((q) => shuffleQuestionOptions(q));
 }
