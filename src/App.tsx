@@ -20,9 +20,54 @@ import { sounds } from './services/soundEffects';
 function AppContent() {
   const { userProfile, loading } = useAuth();
 
-  const [currentTab, setCurrentTab] = useState<
+  const [currentTab, setCurrentTabState] = useState<
     'home' | 'explore' | 'play' | 'passport' | 'profile' | 'leaderboard'
-  >('home');
+  >(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+      if (
+        path === 'explore' ||
+        path === 'play' ||
+        path === 'passport' ||
+        path === 'profile' ||
+        path === 'leaderboard'
+      ) {
+        return path;
+      }
+    }
+    return 'home';
+  });
+
+  const setCurrentTab = (
+    tab: 'home' | 'explore' | 'play' | 'passport' | 'profile' | 'leaderboard'
+  ) => {
+    setCurrentTabState(tab);
+    if (typeof window !== 'undefined') {
+      const newPath = tab === 'home' ? '/' : `/${tab}`;
+      if (window.location.pathname !== newPath) {
+        window.history.pushState({ tab }, '', newPath);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+      if (
+        path === 'explore' ||
+        path === 'play' ||
+        path === 'passport' ||
+        path === 'profile' ||
+        path === 'leaderboard'
+      ) {
+        setCurrentTabState(path);
+      } else {
+        setCurrentTabState('home');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Modals & Active Game State
   const [activeRoom, setActiveRoom] = useState<GameRoom | null>(null);
