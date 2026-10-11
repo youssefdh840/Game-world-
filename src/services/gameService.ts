@@ -19,6 +19,7 @@ import {
   clearSessionQuestionHistory,
   shuffleQuestionOptions,
   shuffleArraySeeded,
+  scrambleWordDeterministic,
   QuestionFilterOptions,
 } from './questionService';
 
@@ -28,6 +29,7 @@ export {
   clearSessionQuestionHistory,
   shuffleQuestionOptions,
   shuffleArraySeeded,
+  scrambleWordDeterministic,
   type QuestionFilterOptions,
 };
 
@@ -80,34 +82,86 @@ export function subscribeToGameRoom(
 export const QUESTION_DURATION_SECONDS = 50;
 export const QUESTION_DURATION_MS = QUESTION_DURATION_SECONDS * 1000;
 
+export const WORD_SCRAMBLE_DURATION_SECONDS = 20;
+export const WORD_SCRAMBLE_DURATION_MS = WORD_SCRAMBLE_DURATION_SECONDS * 1000;
+
+export const GUESS_NUMBER_DURATION_SECONDS = 30;
+export const GUESS_NUMBER_DURATION_MS = GUESS_NUMBER_DURATION_SECONDS * 1000;
+export const GUESS_NUMBER_MAX_ATTEMPTS = 6;
+
+export function getRoundDurationSeconds(gameMode?: string): number {
+  if (gameMode === 'word_scramble') return WORD_SCRAMBLE_DURATION_SECONDS;
+  if (gameMode === 'guess_number') return GUESS_NUMBER_DURATION_SECONDS;
+  return QUESTION_DURATION_SECONDS;
+}
+
+export function calculateWordScramblePoints(remainingSeconds: number): number {
+  const clampedRemaining = Math.max(0, Math.min(WORD_SCRAMBLE_DURATION_SECONDS, Math.floor(remainingSeconds)));
+  return 100 + clampedRemaining * 5;
+}
+
+export function calculateGuessNumberPoints(attemptsUsed: number, remainingSeconds: number): number {
+  const clampedAttempts = Math.max(1, Math.min(GUESS_NUMBER_MAX_ATTEMPTS, Math.floor(attemptsUsed)));
+  const clampedRemaining = Math.max(0, Math.min(GUESS_NUMBER_DURATION_SECONDS, Math.floor(remainingSeconds)));
+  // Points rewarded based on: (Fewer Attempts Used + Speed of Guesses)
+  const attemptBonus = (GUESS_NUMBER_MAX_ATTEMPTS - clampedAttempts) * 20;
+  const speedBonus = clampedRemaining * 3;
+  return 80 + attemptBonus + speedBonus;
+}
+
 export async function submitPlayerAnswer(
   roomId: string,
   userId: string,
   answer: string,
   timeTakenMs: number,
   isCorrect: boolean,
-  room: GameRoom
+  room: GameRoom,
+  overridePoints?: number
 ) {
   if (!roomId || roomId.startsWith('room_bot_')) {
     return;
   }
   const activeUid = auth.currentUser?.uid || userId;
   const isHost = room.hostId === activeUid || room.hostId === userId;
-  const pointsEarned = isCorrect
-    ? Math.max(50, 100 + Math.floor(((QUESTION_DURATION_MS - Math.min(timeTakenMs, QUESTION_DURATION_MS)) / QUESTION_DURATION_MS) * 100))
-    : 0;
+  const roundDurationMs =
+    room.gameMode === 'word_scramble'
+      ? WORD_SCRAMBLE_DURATION_MS
+      : room.gameMode === 'guess_number'
+      ? GUESS_NUMBER_DURATION_MS
+      : QUESTION_DURATION_MS;
+
+  let pointsEarned = 0;
+  if (typeof overridePoints === 'number') {
+    pointsEarned = overridePoints;
+  } else if (isCorrect) {
+    if (room.gameMode === 'word_scramble') {
+      const elapsedSeconds = Math.max(0, Math.floor(Math.min(timeTakenMs, roundDurationMs) / 1000));
+      const remainingSeconds = Math.max(0, WORD_SCRAMBLE_DURATION_SECONDS - elapsedSeconds);
+      pointsEarned = calculateWordScramblePoints(remainingSeconds);
+    } else {
+      pointsEarned = Math.max(
+        50,
+        100 +
+          Math.floor(
+            ((QUESTION_DURATION_MS - Math.min(timeTakenMs, QUESTION_DURATION_MS)) /
+              QUESTION_DURATION_MS) *
+              100
+          )
+      );
+    }
+  }
 
   const updates: Record<string, unknown> = {};
 
   if (isHost) {
     updates.hostAnswer = answer ?? '';
-    updates.hostAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : QUESTION_DURATION_MS;
+    updates.hostAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
     if (pointsEarned > 0) {
       updates.hostScore = increment(pointsEarned);
     }
   } else {
     updates.guestAnswer = answer ?? '';
-    updates.guestAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : QUESTION_DURATION_MS;
+    updates.guestAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
     if (pointsEarned > 0) {
       updates.guestScore = increment(pointsEarned);
     }

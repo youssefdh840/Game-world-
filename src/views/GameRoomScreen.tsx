@@ -11,9 +11,17 @@ import {
   fetchDynamicGameQuestions,
   recordQuestionsAnsweredInSession,
   shuffleArraySeeded,
+  scrambleWordDeterministic,
   forfeitGame,
   QUESTION_DURATION_SECONDS,
   QUESTION_DURATION_MS,
+  WORD_SCRAMBLE_DURATION_SECONDS,
+  WORD_SCRAMBLE_DURATION_MS,
+  GUESS_NUMBER_DURATION_SECONDS,
+  GUESS_NUMBER_DURATION_MS,
+  GUESS_NUMBER_MAX_ATTEMPTS,
+  calculateWordScramblePoints,
+  calculateGuessNumberPoints,
 } from '../services/gameService';
 import { awardGameResults } from '../services/userService';
 import { auth } from '../services/firebase';
@@ -54,7 +62,26 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 }) => {
   const effectiveUid = auth.currentUser?.uid || user.uid;
   const [room, setRoom] = useState<GameRoom>(initialRoom);
-  const [timeLeft, setTimeLeft] = useState<number>(QUESTION_DURATION_SECONDS);
+  const isWordScramble =
+    room.gameMode === 'word_scramble' ||
+    initialRoom.gameMode === 'word_scramble' ||
+    room.currentQuestion?.category === 'word_scramble';
+  const isGuessNumber =
+    room.gameMode === 'guess_number' ||
+    initialRoom.gameMode === 'guess_number' ||
+    room.currentQuestion?.category === 'guess_number';
+  const roundDurationSeconds = isWordScramble
+    ? WORD_SCRAMBLE_DURATION_SECONDS
+    : isGuessNumber
+    ? GUESS_NUMBER_DURATION_SECONDS
+    : QUESTION_DURATION_SECONDS;
+  const roundDurationMs = isWordScramble
+    ? WORD_SCRAMBLE_DURATION_MS
+    : isGuessNumber
+    ? GUESS_NUMBER_DURATION_MS
+    : QUESTION_DURATION_MS;
+
+  const [timeLeft, setTimeLeft] = useState<number>(roundDurationSeconds);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [hasAnswered, setHasAnswered] = useState<boolean>(false);
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
@@ -68,6 +95,18 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const [reportReason, setReportReason] = useState<string>('Unsportsmanlike conduct');
   const [reportedSuccess, setReportedSuccess] = useState<boolean>(false);
   const [forfeitModalOpen, setForfeitModalOpen] = useState<boolean>(false);
+
+  // Word Scramble specific interactive state
+  const [selectedTileIndices, setSelectedTileIndices] = useState<number[]>([]);
+  const [scrambleError, setScrambleError] = useState<string | null>(null);
+  const [lastEarnedPoints, setLastEarnedPoints] = useState<number>(0);
+
+  // Guess the Number specific interactive state
+  const [numberInput, setNumberInput] = useState<string>('');
+  const [numberGuesses, setNumberGuesses] = useState<
+    Array<{ value: number; feedback: 'higher' | 'lower' | 'correct' }>
+  >([]);
+  const [numberError, setNumberError] = useState<string | null>(null);
 
   // End of match awards
   const [awardedResults, setAwardedResults] = useState<{
@@ -86,17 +125,38 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const isHostRef = useRef<boolean>(isHost);
   isHostRef.current = isHost;
 
-  // Active question accessor with deterministic room-synchronized option shuffling
+  // Active question accessor with deterministic room-synchronized option/letter shuffling
   const rawCurrentQ = room.currentQuestion || (room.questions && room.questions[room.currentRound - 1]);
   const currentQ: Question | undefined = React.useMemo(() => {
     if (!rawCurrentQ) return undefined;
-    // Deterministically shuffle options seeded by room.id + question.id + round so both players see the exact same randomized A/B/C/D order
     const seed = `${room.id || 'room'}_${rawCurrentQ.id}_${room.currentRound}`;
+    if (rawCurrentQ.category === 'guess_number' || room.gameMode === 'guess_number') {
+      const targetNum =
+        typeof rawCurrentQ.targetNumber === 'number'
+          ? rawCurrentQ.targetNumber
+          : parseInt(rawCurrentQ.correctAnswer, 10) || 50;
+      return {
+        ...rawCurrentQ,
+        targetNumber: targetNum,
+        correctAnswer: String(targetNum),
+      };
+    }
+    if (rawCurrentQ.category === 'word_scramble' || room.gameMode === 'word_scramble') {
+      const targetWord = rawCurrentQ.correctAnswer.toUpperCase().replace(/[^A-Z]/g, '');
+      const syncScrambled = scrambleWordDeterministic(targetWord, seed);
+      return {
+        ...rawCurrentQ,
+        scrambledWord: syncScrambled,
+        options: syncScrambled.split(''),
+        correctAnswer: targetWord,
+      };
+    }
+    // Deterministically shuffle options seeded by room.id + question.id + round so both players see the exact same randomized A/B/C/D order
     return {
       ...rawCurrentQ,
       options: shuffleArraySeeded(rawCurrentQ.options, seed),
     };
-  }, [rawCurrentQ?.id, room.id, room.currentRound]);
+  }, [rawCurrentQ?.id, room.id, room.currentRound, room.gameMode]);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const roundStartTimeRef = useRef<number>(Date.now());
@@ -149,7 +209,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       fetchDynamicGameQuestions({
         category: room.gameMode,
         countryCode: room.targetCountryCode,
-        count: room.totalRounds || 5,
+        count: room.totalRounds || (room.gameMode === 'guess_number' ? 3 : 5),
         userLevel: user.level,
       }).then((qs) => {
         if (qs.length > 0) {
@@ -269,6 +329,12 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     setSelectedAnswer(null);
     setHasAnswered(false);
     setShowExplanation(false);
+    setSelectedTileIndices([]);
+    setScrambleError(null);
+    setNumberInput('');
+    setNumberGuesses([]);
+    setNumberError(null);
+    setLastEarnedPoints(0);
     isAdvancingRoundRef.current = false;
     activeRoundRef.current = room.currentRound;
 
@@ -292,8 +358,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     const now = Date.now();
     let startTime = room.roundStartTime || room.roundStartedAt || 0;
 
-    // Check if timestamp is missing or stale (> 55s old or > 4s in future)
-    const isInvalid = !startTime || (now - startTime >= QUESTION_DURATION_MS + 5000) || (startTime > now + 4000);
+    // Check if timestamp is missing or stale
+    const isInvalid = !startTime || (now - startTime >= roundDurationMs + 5000) || (startTime > now + 4000);
 
     if (isInvalid) {
       if (isHostRef.current) {
@@ -312,9 +378,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       roundStartTimeRef.current = startTime;
     }
 
-    // Initial countdown calculation (clamped so clock skew never produces negative or >50 remaining)
+    // Initial countdown calculation (clamped so clock skew never produces negative or >roundDurationSeconds remaining)
     const elapsedInitial = Math.max(0, Math.floor((Date.now() - roundStartTimeRef.current) / 1000));
-    const initialRemaining = Math.max(0, QUESTION_DURATION_SECONDS - elapsedInitial);
+    const initialRemaining = Math.max(0, roundDurationSeconds - elapsedInitial);
     setTimeLeft(initialRemaining);
 
     let lastSoundSecond = -1;
@@ -331,7 +397,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       }
 
       const elapsed = Math.max(0, Math.floor((Date.now() - roundStartTimeRef.current) / 1000));
-      const remaining = Math.max(0, QUESTION_DURATION_SECONDS - elapsed);
+      const remaining = Math.max(0, roundDurationSeconds - elapsed);
       setTimeLeft(remaining);
 
       if (remaining <= 3 && remaining > 0 && remaining !== lastSoundSecond) {
@@ -356,19 +422,144 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
     };
-  }, [room.currentRound, room.id, currentQ?.id, room.status]);
+  }, [room.currentRound, room.id, currentQ?.id, room.status, roundDurationSeconds, roundDurationMs]);
 
-  // Monitor when both players have submitted answers
+  // Monitor when both players have submitted answers (or in Guess the Number, when someone cracks the secret number first!)
   useEffect(() => {
     if (room.status === 'finished') return;
 
     const hostDone = Boolean(room.hostAnswer);
     const guestDone = Boolean(room.guestAnswer);
 
+    if (isGuessNumber && currentQ) {
+      const targetStr = String(
+        typeof currentQ.targetNumber === 'number' ? currentQ.targetNumber : currentQ.correctAnswer
+      );
+      if (room.hostAnswer === targetStr || room.guestAnswer === targetStr) {
+        triggerRoundAdvance('number_cracked_first');
+        return;
+      }
+    }
+
     if (hostDone && guestDone) {
       triggerRoundAdvance('both_answered');
     }
-  }, [room.hostAnswer, room.guestAnswer, room.status, room.currentRound]);
+  }, [room.hostAnswer, room.guestAnswer, room.status, room.currentRound, isGuessNumber, currentQ?.id]);
+
+  const handleNumberGuessSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (hasAnswered || showExplanation || isAdvancingRoundRef.current || !currentQ) return;
+
+    const raw = numberInput.trim();
+    const num = parseInt(raw, 10);
+    if (isNaN(num) || num < 1 || num > 100) {
+      sounds.playWrong();
+      setNumberError('Please enter a valid number between 1 and 100.');
+      return;
+    }
+
+    if (numberGuesses.some((g) => g.value === num)) {
+      sounds.playWrong();
+      setNumberError(`You already guessed ${num}! Try a different number.`);
+      return;
+    }
+
+    setNumberError(null);
+    setNumberInput('');
+
+    const targetNum =
+      typeof currentQ.targetNumber === 'number'
+        ? currentQ.targetNumber
+        : parseInt(currentQ.correctAnswer, 10) || 50;
+
+    const nextAttemptsUsed = numberGuesses.length + 1;
+
+    if (num === targetNum) {
+      // Cracked the secret number!
+      sounds.playCorrect();
+      const updatedGuesses = [
+        ...numberGuesses,
+        { value: num, feedback: 'correct' as const },
+      ];
+      setNumberGuesses(updatedGuesses);
+      setHasAnswered(true);
+      setSelectedAnswer(String(num));
+
+      const timeTaken = Math.max(0, Date.now() - roundStartTimeRef.current);
+      const elapsedSec = Math.max(0, Math.floor(timeTaken / 1000));
+      const remainingSec = Math.max(0, GUESS_NUMBER_DURATION_SECONDS - elapsedSec);
+      const pointsEarned = calculateGuessNumberPoints(nextAttemptsUsed, remainingSec);
+      setLastEarnedPoints(pointsEarned);
+
+      const isHostPlayer = isHostRef.current;
+      setRoom((prev) => {
+        const copy = { ...prev };
+        if (isHostPlayer) {
+          copy.hostAnswer = String(num);
+          copy.hostAnswerTime = timeTaken;
+          copy.hostScore = (copy.hostScore || 0) + pointsEarned;
+        } else {
+          copy.guestAnswer = String(num);
+          copy.guestAnswerTime = timeTaken;
+          copy.guestScore = (copy.guestScore || 0) + pointsEarned;
+        }
+        return copy;
+      });
+
+      const activeUid = auth.currentUser?.uid || user.uid;
+      submitPlayerAnswer(
+        room.id,
+        activeUid,
+        String(num),
+        timeTaken,
+        true,
+        roomRef.current,
+        pointsEarned
+      );
+      return;
+    }
+
+    // Incorrect guess: provide Higher ⬆️ or Lower ⬇️ hint
+    const feedback: 'higher' | 'lower' = num < targetNum ? 'higher' : 'lower';
+    const updatedGuesses = [...numberGuesses, { value: num, feedback }];
+    setNumberGuesses(updatedGuesses);
+
+    if (updatedGuesses.length >= GUESS_NUMBER_MAX_ATTEMPTS) {
+      // Out of attempts (6 used)
+      sounds.playWrong();
+      setHasAnswered(true);
+      const exhaustedAns = `__OUT_OF_ATTEMPTS_${num}__`;
+      setSelectedAnswer(exhaustedAns);
+      setLastEarnedPoints(0);
+
+      const timeTaken = Math.max(0, Date.now() - roundStartTimeRef.current);
+      const isHostPlayer = isHostRef.current;
+      setRoom((prev) => {
+        const copy = { ...prev };
+        if (isHostPlayer) {
+          copy.hostAnswer = exhaustedAns;
+          copy.hostAnswerTime = timeTaken;
+        } else {
+          copy.guestAnswer = exhaustedAns;
+          copy.guestAnswerTime = timeTaken;
+        }
+        return copy;
+      });
+
+      const activeUid = auth.currentUser?.uid || user.uid;
+      submitPlayerAnswer(
+        room.id,
+        activeUid,
+        exhaustedAns,
+        timeTaken,
+        false,
+        roomRef.current,
+        0
+      );
+    } else {
+      sounds.playPop();
+    }
+  };
 
   const handleTimeExpired = () => {
     if (timerRef.current) {
@@ -380,6 +571,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     const fallbackAns = '__TIME_EXPIRED__';
 
     setHasAnswered(true);
+    setScrambleError(null);
     setSelectedAnswer((prev) => {
       if (!prev) {
         sounds.playWrong();
@@ -391,9 +583,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     const isHostPlayer = isHostRef.current;
     const activeUid = auth.currentUser?.uid || user.uid;
     if (isHostPlayer && !currentRoom.hostAnswer) {
-      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, QUESTION_DURATION_MS, false, currentRoom);
+      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, roundDurationMs, false, currentRoom, 0);
     } else if (!isHostPlayer && !currentRoom.guestAnswer) {
-      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, QUESTION_DURATION_MS, false, currentRoom);
+      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, roundDurationMs, false, currentRoom, 0);
     }
 
     setRoom((prev) => ({
@@ -404,6 +596,126 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
     triggerRoundAdvance('time_expired');
   };
+
+  // Word Scramble: Verify assembled sequence, allow clear & retry on wrong guess
+  const verifyWordScrambleSequence = (indices: number[]) => {
+    if (hasAnswered || showExplanation || isAdvancingRoundRef.current || !currentQ) return;
+    const letters = currentQ.options;
+    const targetWord = currentQ.correctAnswer.toUpperCase().replace(/[^A-Z]/g, '');
+    const candidate = indices.map((i) => letters[i]).join('').toUpperCase();
+
+    if (candidate.length < targetWord.length) return;
+
+    if (candidate === targetWord) {
+      // Correct sequence! Lock in answer and award (Base 100 pts + Remaining Seconds x 5)
+      sounds.playCorrect();
+      setHasAnswered(true);
+      setSelectedAnswer(candidate);
+      setScrambleError(null);
+
+      const timeTaken = Math.max(0, Date.now() - roundStartTimeRef.current);
+      const elapsedSec = Math.max(0, Math.floor(timeTaken / 1000));
+      const remainingSec = Math.max(0, WORD_SCRAMBLE_DURATION_SECONDS - elapsedSec);
+      const pointsEarned = calculateWordScramblePoints(remainingSec);
+      setLastEarnedPoints(pointsEarned);
+
+      const isHostPlayer = isHostRef.current;
+      setRoom((prev) => {
+        const copy = { ...prev };
+        if (isHostPlayer) {
+          copy.hostAnswer = candidate;
+          copy.hostAnswerTime = timeTaken;
+          copy.hostScore = (copy.hostScore || 0) + pointsEarned;
+        } else {
+          copy.guestAnswer = candidate;
+          copy.guestAnswerTime = timeTaken;
+          copy.guestScore = (copy.guestScore || 0) + pointsEarned;
+        }
+        return copy;
+      });
+
+      const activeUid = auth.currentUser?.uid || user.uid;
+      submitPlayerAnswer(
+        room.id,
+        activeUid,
+        candidate,
+        timeTaken,
+        true,
+        roomRef.current,
+        pointsEarned
+      );
+    } else {
+      // Incorrect sequence: allow player to clear and retry before time expires!
+      sounds.playWrong();
+      setScrambleError('Incorrect sequence! Tap Clear & Retry to try again before time runs out.');
+    }
+  };
+
+  const handleScrambleTileClick = (tileIdx: number) => {
+    if (hasAnswered || showExplanation || isAdvancingRoundRef.current || !currentQ) return;
+    if (selectedTileIndices.includes(tileIdx)) return;
+
+    sounds.playPop();
+    setScrambleError(null);
+    const nextIndices = [...selectedTileIndices, tileIdx];
+    setSelectedTileIndices(nextIndices);
+
+    const targetLength = currentQ.correctAnswer.replace(/[^A-Za-z]/g, '').length;
+    if (nextIndices.length === targetLength) {
+      verifyWordScrambleSequence(nextIndices);
+    }
+  };
+
+  const handleRemoveScrambleSlot = (slotPosition: number) => {
+    if (hasAnswered || showExplanation || isAdvancingRoundRef.current) return;
+    sounds.playPop();
+    setScrambleError(null);
+    setSelectedTileIndices((prev) => prev.filter((_, idx) => idx !== slotPosition));
+  };
+
+  const handleClearScramble = () => {
+    if (hasAnswered || showExplanation || isAdvancingRoundRef.current) return;
+    sounds.playPop();
+    setScrambleError(null);
+    setSelectedTileIndices([]);
+  };
+
+  // Support physical keyboard typing & Backspace for Word Scramble
+  useEffect(() => {
+    if (!isWordScramble || room.status === 'finished' || hasAnswered || showExplanation) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in chat or report input
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (!currentQ) return;
+
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        setScrambleError(null);
+        setSelectedTileIndices((prev) => prev.slice(0, -1));
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleClearScramble();
+        return;
+      }
+
+      const keyUpper = e.key.toUpperCase();
+      if (/^[A-Z]$/.test(keyUpper)) {
+        const availableIdx = currentQ.options.findIndex(
+          (ch, idx) => ch.toUpperCase() === keyUpper && !selectedTileIndices.includes(idx)
+        );
+        if (availableIdx !== -1) {
+          handleScrambleTileClick(availableIdx);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isWordScramble, room.status, hasAnswered, showExplanation, currentQ, selectedTileIndices]);
 
   const handleAnswerSelect = (option: string) => {
     if (hasAnswered || showExplanation || isAdvancingRoundRef.current) return;
@@ -423,6 +735,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     const pointsEarned = isCorrect
       ? Math.max(50, 100 + Math.floor(((QUESTION_DURATION_MS - Math.min(timeTaken, QUESTION_DURATION_MS)) / QUESTION_DURATION_MS) * 100))
       : 0;
+    setLastEarnedPoints(pointsEarned);
 
     // Optimistically update local room
     const isHostPlayer = isHostRef.current;
@@ -474,21 +787,35 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     const forfeitedById = latestRoom.forfeitBy || latestRoom.abandonedBy;
     const isWinner = forfeitedById
       ? forfeitedById !== activeUid && forfeitedById !== user.uid
-      : myScore >= opponentScore;
+      : myScore > opponentScore;
 
-    const xpReward = isWinner ? 250 : 100;
+    const isScrambleOrNumberMatch =
+      latestRoom.gameMode === 'word_scramble' ||
+      initialRoom.gameMode === 'word_scramble' ||
+      latestRoom.gameMode === 'guess_number' ||
+      initialRoom.gameMode === 'guess_number';
+
+    // Word Scramble & Guess the Number: Winner gains +180 XP, Runner-up gets participation +40 XP
+    const xpReward = isScrambleOrNumberMatch
+      ? isWinner
+        ? 180
+        : 40
+      : isWinner
+      ? 250
+      : 100;
     const coinsReward = isWinner ? 50 : 20;
 
     const opponentCountryCode = isHostPlayer ? latestRoom.guestCountryCode : latestRoom.hostCountryCode;
     const opponentUsername = isHostPlayer ? latestRoom.guestUsername : latestRoom.hostUsername;
     const opponentAvatar = isHostPlayer ? latestRoom.guestAvatar : latestRoom.hostAvatar;
 
+    // Winner unlocks opponent passport visa & updates leaderboard stats; runner-up gets participation XP
     const res = await awardGameResults(
       activeUid,
       isWinner,
       xpReward,
       coinsReward,
-      opponentCountryCode,
+      isScrambleOrNumberMatch ? (isWinner ? opponentCountryCode : undefined) : opponentCountryCode,
       opponentUsername,
       opponentAvatar
     );
@@ -567,6 +894,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   if (room.status === 'finished') {
     const isWinner = myScore > opponentScore;
     const isTie = myScore === opponentScore;
+    const matchQuestions = room.questions || [];
 
     return (
       <div className="min-h-[100dvh] w-full bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 animate-fade-in">
@@ -581,7 +909,11 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           </div>
 
           <span className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-amber-400">
-            MATCH CONCLUSION
+            {isGuessNumber
+              ? 'GUESS THE NUMBER • 3 ROUNDS SUMMARY'
+              : isWordScramble
+              ? 'WORD SCRAMBLE • MATCH SUMMARY'
+              : 'MATCH CONCLUSION'}
           </span>
           <h2 className="text-3xl sm:text-4xl font-black text-white mt-1">
             {room.forfeitBy
@@ -592,7 +924,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
               ? 'VICTORY!'
               : isTie
               ? 'WELL PLAYED!'
-              : 'DEFEAT'}
+              : 'RUNNER-UP'}
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-1.5 leading-relaxed">
             {room.forfeitBy
@@ -600,19 +932,20 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                 ? `${opponentName} left the match. Victory has been awarded to you!`
                 : 'You surrendered the duel.'
               : isWinner
-              ? `You triumphed over ${opponentName} in a cultural showdown!`
+              ? `You outscored ${opponentName} across ${room.totalRounds || (isGuessNumber ? 3 : 5)} rounds!`
               : isTie
               ? 'An evenly matched clash of world explorers!'
               : `Good game! ${opponentName} claimed the crown this time.`}
           </p>
 
           {/* Final Score Duel Card */}
-          <div className="my-6 p-4 sm:p-5 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-around">
+          <div className="my-5 p-4 sm:p-5 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-around">
             {/* You */}
             <div className="flex flex-col items-center">
               <span className="text-2xl sm:text-3xl mb-1">{user.countryFlag}</span>
               <span className="text-xs sm:text-sm font-bold text-slate-300 truncate max-w-[100px] sm:max-w-[140px]">{user.username}</span>
               <span className="text-2xl sm:text-3xl font-black text-emerald-400 mt-0.5">{myScore}</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">Total Score</span>
             </div>
 
             <div className="text-xs sm:text-sm font-black text-slate-500 uppercase px-2">VS</div>
@@ -621,13 +954,52 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
             <div className="flex flex-col items-center">
               <span className="text-2xl sm:text-3xl mb-1">{opponentFlag}</span>
               <span className="text-xs sm:text-sm font-bold text-slate-300 truncate max-w-[100px] sm:max-w-[140px]">{opponentName}</span>
-              <span className="text-2xl sm:text-3xl font-black text-slate-300 mt-0.5">{opponentScore}</span>
+              <span className="text-2xl sm:text-3xl font-black text-rose-400 mt-0.5">{opponentScore}</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">Total Score</span>
             </div>
           </div>
 
+          {/* Correct Words / Secret Numbers / Round Summary List */}
+          {matchQuestions.length > 0 && (
+            <div className="mb-5 p-4 rounded-2xl bg-slate-950/70 border border-slate-800 text-left">
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-emerald-400">
+                  {isGuessNumber
+                    ? '3 Rounds • Secret Target Numbers'
+                    : isWordScramble
+                    ? '5 Rounds • Correct Words Unscrambled'
+                    : 'Match Answers Summary'}
+                </span>
+                <span className="text-[10px] font-semibold text-slate-400">
+                  {matchQuestions.length} Rounds
+                </span>
+              </div>
+              <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                {matchQuestions.map((q, idx) => (
+                  <div
+                    key={q.id || idx}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-900/90 border border-slate-800/80 text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-5 h-5 rounded-md bg-slate-800 text-slate-400 font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
+                        {idx + 1}
+                      </span>
+                      <span className="text-slate-300 truncate">
+                        {isGuessNumber ? `Round ${idx + 1} Secret Target` : q.countryName}
+                      </span>
+                    </div>
+                    <span className="font-mono font-black text-emerald-400 tracking-wider uppercase shrink-0">
+                      {isGuessNumber ? `🎯 ${q.correctAnswer}` : q.correctAnswer}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Virtual Passport Stamp Unlock Animation! */}
           {awardedResults?.newlyUnlockedCountry && (
-            <div className="mb-6 p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/50 text-left animate-scale-up">
+            <div className="mb-5 p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/50 text-left animate-scale-up">
               <div className="flex items-center gap-3.5">
                 <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-emerald-500/20 border border-emerald-400 text-3xl flex items-center justify-center shrink-0 shadow-lg">
                   {opponentFlag}
@@ -650,9 +1022,11 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           {/* XP & Coins Rewards */}
           <div className="grid grid-cols-2 gap-3.5 mb-6">
             <div className="bg-slate-800/60 border border-slate-700/40 rounded-2xl p-3.5 sm:p-4 text-center">
-              <span className="text-[10px] sm:text-xs font-bold text-indigo-400 uppercase block">XP EARNED</span>
+              <span className="text-[10px] sm:text-xs font-bold text-indigo-400 uppercase block">
+                {isWinner ? 'WINNER XP REWARD' : 'PARTICIPATION XP'}
+              </span>
               <span className="text-xl sm:text-2xl font-black text-indigo-300">
-                +{awardedResults?.xpEarned || (isWinner ? 250 : 100)} XP
+                +{awardedResults?.xpEarned || (isWordScramble || isGuessNumber ? (isWinner ? 180 : 40) : isWinner ? 250 : 100)} XP
               </span>
             </div>
             <div className="bg-slate-800/60 border border-slate-700/40 rounded-2xl p-3.5 sm:p-4 text-center">
@@ -771,7 +1145,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
               className={`h-full transition-all duration-300 ${
                 timeLeft <= 5 ? 'bg-rose-500 animate-pulse' : 'bg-gradient-to-r from-amber-400 to-rose-500'
               }`}
-              style={{ width: `${(timeLeft / QUESTION_DURATION_SECONDS) * 100}%` }}
+              style={{ width: `${(timeLeft / roundDurationSeconds) * 100}%` }}
             />
           </div>
         </div>
@@ -782,25 +1156,106 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         {currentQ ? (
           <div className="space-y-5 sm:space-y-6">
             {/* Category Pill & Country Origin */}
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1 rounded-full">
-                {currentQ.category.replace('_', ' ')}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-3 py-1 rounded-full">
+                {(() => {
+                  if (isGuessNumber) {
+                    return 'Guess the Number • Numbers & Logic';
+                  }
+                  if (isWordScramble) {
+                    return `Word Scramble • ${currentQ.subCategory || 'Culture'}`;
+                  }
+                  if (currentQ.subCategory === 'Flags' || currentQ.id.startsWith('flag_quiz_')) {
+                    return 'Cultural Quiz • Flags';
+                  }
+                  if (currentQ.subCategory === 'Landmarks') {
+                    return 'Cultural Quiz • Landmarks';
+                  }
+                  if (currentQ.category === 'mystery_food' || currentQ.subCategory === 'Food') {
+                    return 'Cultural Quiz • Food';
+                  }
+                  if (currentQ.category === 'music_culture' || currentQ.subCategory === 'Music') {
+                    return 'Cultural Quiz • Music';
+                  }
+                  if (currentQ.category === 'cultural_mime' || currentQ.subCategory === 'Traditions') {
+                    return 'Cultural Quiz • Traditions';
+                  }
+                  if (currentQ.category === 'guess_word' || currentQ.subCategory === 'Language') {
+                    return 'Cultural Quiz • Languages';
+                  }
+                  return `Cultural Quiz • ${currentQ.subCategory || 'National Facts'}`;
+                })()}
               </span>
               <span className="text-xs sm:text-sm text-slate-400 font-bold flex items-center gap-1.5">
-                <span>{currentQ.countryName}</span>
-                <span>{currentQ.category === 'guess_word' ? '🗣️' : '🌍'}</span>
+                <span>
+                  {isGuessNumber
+                    ? 'Range: 1–100'
+                    : !showExplanation &&
+                      !hasAnswered &&
+                      (isWordScramble
+                        ? currentQ.correctAnswer.toUpperCase() ===
+                          currentQ.countryName.toUpperCase().replace(/[^A-Z]/g, '')
+                        : currentQ.options.some(
+                            (opt) => opt.toLowerCase().trim() === currentQ.countryName.toLowerCase().trim()
+                          ))
+                    ? 'Mystery Country'
+                    : currentQ.countryName}
+                </span>
+                <span>
+                  {isGuessNumber
+                    ? '🔢'
+                    : isWordScramble
+                    ? '🔤'
+                    : currentQ.category === 'guess_word'
+                    ? '🗣️'
+                    : '🌍'}
+                </span>
               </span>
             </div>
 
             {/* Question Prompt Card */}
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 md:p-8 shadow-xl text-center relative overflow-hidden">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 md:p-8 shadow-xl text-center relative overflow-hidden space-y-4">
+              {currentQ.imageUrl && (
+                <div className="flex justify-center">
+                  <img
+                    src={currentQ.imageUrl}
+                    alt="Cultural Quiz Visual"
+                    className="max-h-36 sm:max-h-44 w-auto rounded-2xl border border-slate-700/80 shadow-lg object-contain bg-slate-950/60 p-1.5"
+                  />
+                </div>
+              )}
+
+              {isWordScramble && (
+                <div className="inline-flex items-center gap-2 text-[11px] sm:text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full">
+                  <span>⚡ Speed Score: {calculateWordScramblePoints(timeLeft)} pts</span>
+                  <span>(100 + {timeLeft}s × 5)</span>
+                </div>
+              )}
+
+              {isGuessNumber && (
+                <div className="inline-flex items-center flex-wrap justify-center gap-2 text-[11px] sm:text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-3.5 py-1 rounded-full">
+                  <span>
+                    🎯 Attempts Left: {Math.max(0, GUESS_NUMBER_MAX_ATTEMPTS - numberGuesses.length)} / {GUESS_NUMBER_MAX_ATTEMPTS}
+                  </span>
+                  <span>•</span>
+                  <span>
+                    ⚡ Potential Score:{' '}
+                    {calculateGuessNumberPoints(
+                      Math.min(GUESS_NUMBER_MAX_ATTEMPTS, numberGuesses.length + 1),
+                      timeLeft
+                    )}{' '}
+                    pts
+                  </span>
+                </div>
+              )}
+
               <p className="text-base sm:text-lg md:text-xl font-extrabold text-white leading-relaxed">
                 {currentQ.prompt}
               </p>
 
-              {/* Special Mini-Game 4: Music Sound Synthesis Button */}
-              {currentQ.category === 'music_culture' && (
-                <div className="mt-5">
+              {/* Audio Pattern Synthesis Button for Music Questions */}
+              {!isWordScramble && !isGuessNumber && (currentQ.category === 'music_culture' || currentQ.subCategory === 'Music') && (
+                <div className="pt-1">
                   <button
                     onClick={() => {
                       sounds.playMelody([523, 659, 784, 1046], 'bell');
@@ -814,49 +1269,348 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
               )}
             </div>
 
-            {/* 4 Interactive Option Buttons */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
-              {currentQ.options.map((option, idx) => {
-                const isSelected = selectedAnswer === option;
-                const isCorrect = option === currentQ.correctAnswer;
-                const showResult = showExplanation || hasAnswered;
+            {/* Interactive Gameplay Controls: Guess the Number vs Word Scramble vs Multiple Choice */}
+            {isGuessNumber ? (
+              <div className="space-y-4">
+                {/* Latest Hint Banner & Narrowed Bounds */}
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 space-y-4">
+                  {(() => {
+                    const lowBound = numberGuesses
+                      .filter((g) => g.feedback === 'higher')
+                      .reduce((max, g) => Math.max(max, g.value + 1), 1);
+                    const highBound = numberGuesses
+                      .filter((g) => g.feedback === 'lower')
+                      .reduce((min, g) => Math.min(min, g.value - 1), 100);
+                    const lastGuess =
+                      numberGuesses.length > 0 ? numberGuesses[numberGuesses.length - 1] : null;
 
-                let btnStyle = 'bg-slate-900 border-slate-800 text-slate-200 hover:border-indigo-500/60';
+                    return (
+                      <>
+                        <div className="flex items-center justify-between gap-2 text-xs font-bold">
+                          <span className="text-slate-400 uppercase tracking-wider">
+                            Active Range:{' '}
+                            <span className="text-amber-400 font-mono text-sm">
+                              {Math.min(lowBound, highBound)} – {Math.max(lowBound, highBound)}
+                            </span>
+                          </span>
+                          <span className="text-slate-400 font-mono">
+                            {numberGuesses.length} / {GUESS_NUMBER_MAX_ATTEMPTS} Tries Used
+                          </span>
+                        </div>
 
-                if (showResult) {
-                  if (isCorrect) {
-                    btnStyle = 'bg-emerald-600 border-emerald-400 text-white font-black shadow-lg shadow-emerald-500/20';
-                  } else if (isSelected && !isCorrect) {
-                    btnStyle = 'bg-rose-600 border-rose-400 text-white font-black';
-                  } else {
-                    btnStyle = 'bg-slate-900/50 border-slate-800/50 text-slate-500';
-                  }
-                }
+                        {/* Immediate High / Low Feedback Display */}
+                        {lastGuess && !showExplanation && (
+                          <div
+                            className={`p-3.5 rounded-2xl border text-center font-black text-sm sm:text-base flex items-center justify-center gap-2 animate-fade-in ${
+                              lastGuess.feedback === 'correct'
+                                ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                                : lastGuess.feedback === 'higher'
+                                ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                                : 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300'
+                            }`}
+                          >
+                            {lastGuess.feedback === 'correct' ? (
+                              <>
+                                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                                <span>
+                                  🎯 Spot on! {lastGuess.value} is the secret number! (+{lastEarnedPoints} pts)
+                                </span>
+                              </>
+                            ) : lastGuess.feedback === 'higher' ? (
+                              <span>
+                                Your guess ({lastGuess.value}) is too low — Go{' '}
+                                <span className="underline">Higher ⬆️</span>
+                              </span>
+                            ) : (
+                              <span>
+                                Your guess ({lastGuess.value}) is too high — Go{' '}
+                                <span className="underline">Lower ⬇️</span>
+                              </span>
+                            )}
+                          </div>
+                        )}
 
-                return (
-                  <button
-                    key={option}
-                    disabled={hasAnswered}
-                    onClick={() => handleAnswerSelect(option)}
-                    className={`w-full p-4 sm:p-4.5 rounded-2xl border text-sm sm:text-base font-bold text-left transition-all active:scale-98 flex items-center justify-between gap-2 cursor-pointer ${btnStyle}`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="w-7 h-7 rounded-lg bg-slate-800/80 text-slate-400 text-xs flex items-center justify-center font-mono shrink-0">
-                        {String.fromCharCode(65 + idx)}
-                      </span>
-                      <span className="leading-snug">{option}</span>
+                        {numberError && !hasAnswered && (
+                          <div className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs font-bold flex items-center justify-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                            <span>{numberError}</span>
+                          </div>
+                        )}
+
+                        {/* Number Input & Submit Form */}
+                        {!hasAnswered && !showExplanation ? (
+                          <form onSubmit={handleNumberGuessSubmit} className="space-y-3">
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="number"
+                                min={1}
+                                max={100}
+                                inputMode="numeric"
+                                placeholder={`Enter number (${Math.min(lowBound, highBound)}-${Math.max(lowBound, highBound)})...`}
+                                value={numberInput}
+                                onChange={(e) => {
+                                  setNumberError(null);
+                                  setNumberInput(e.target.value);
+                                }}
+                                className="flex-1 bg-slate-950 border-2 border-slate-700 focus:border-amber-400 rounded-2xl px-4 py-3.5 text-center font-mono font-black text-xl sm:text-2xl text-white focus:outline-none transition-colors"
+                              />
+                              <button
+                                type="submit"
+                                className="px-6 py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold text-sm sm:text-base shadow-lg active:scale-95 transition-all cursor-pointer shrink-0"
+                              >
+                                Guess
+                              </button>
+                            </div>
+
+                            {/* Quick Midpoint / Smart Assist Buttons */}
+                            <div className="flex items-center justify-center flex-wrap gap-2 pt-1">
+                              {(() => {
+                                const lo = Math.min(lowBound, highBound);
+                                const hi = Math.max(lowBound, highBound);
+                                const mid = Math.floor((lo + hi) / 2);
+                                const q1 = Math.floor((lo + mid) / 2);
+                                const q3 = Math.ceil((mid + hi) / 2);
+                                const presets = Array.from(new Set([q1, mid, q3])).filter(
+                                  (v) => v >= 1 && v <= 100 && !numberGuesses.some((g) => g.value === v)
+                                );
+                                return presets.map((presetVal) => (
+                                  <button
+                                    key={presetVal}
+                                    type="button"
+                                    onClick={() => {
+                                      sounds.playPop();
+                                      setNumberError(null);
+                                      setNumberInput(String(presetVal));
+                                    }}
+                                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-mono font-bold text-slate-300 cursor-pointer transition-colors"
+                                  >
+                                    Try {presetVal}
+                                  </button>
+                                ));
+                              })()}
+                            </div>
+                          </form>
+                        ) : (
+                          <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-center text-xs sm:text-sm font-bold text-slate-300">
+                            {showExplanation ? (
+                              <span>
+                                Secret Target Number:{' '}
+                                <span className="text-emerald-400 font-mono font-black text-base">
+                                  {currentQ.correctAnswer}
+                                </span>
+                              </span>
+                            ) : (
+                              <span>Waiting for round to conclude...</span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* 6-Attempt History Slots */}
+                        <div className="pt-2">
+                          <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                            Guess History ({numberGuesses.length} / {GUESS_NUMBER_MAX_ATTEMPTS})
+                          </span>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {Array.from({ length: GUESS_NUMBER_MAX_ATTEMPTS }).map((_, idx) => {
+                              const item = numberGuesses[idx];
+                              if (!item) {
+                                return (
+                                  <div
+                                    key={idx}
+                                    className="h-11 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-center text-[11px] font-mono text-slate-600"
+                                  >
+                                    Attempt #{idx + 1}
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`h-11 px-3 rounded-xl border flex items-center justify-between font-mono text-xs font-black ${
+                                    item.feedback === 'correct'
+                                      ? 'bg-emerald-600/25 border-emerald-400 text-emerald-300'
+                                      : item.feedback === 'higher'
+                                      ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                                      : 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300'
+                                  }`}
+                                >
+                                  <span className="text-sm">{item.value}</span>
+                                  <span>
+                                    {item.feedback === 'correct'
+                                      ? '🎯 Exact!'
+                                      : item.feedback === 'higher'
+                                      ? 'Higher ⬆️'
+                                      : 'Lower ⬇️'}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            ) : isWordScramble ? (
+              <div className="space-y-4">
+                {/* Assembled Answer Letter Slots */}
+                <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-5 text-center space-y-3">
+                  <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-400 font-bold px-1">
+                    <span>YOUR UNSCRAMBLED WORD</span>
+                    <span>
+                      {selectedTileIndices.length} / {currentQ.options.length} LETTERS
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-center flex-wrap gap-2 py-1">
+                    {Array.from({ length: currentQ.options.length }).map((_, slotIdx) => {
+                      const tileIndex = selectedTileIndices[slotIdx];
+                      const char =
+                        showExplanation
+                          ? currentQ.correctAnswer[slotIdx]
+                          : tileIndex !== undefined
+                          ? currentQ.options[tileIndex]
+                          : '';
+
+                      const isFilled = Boolean(char);
+
+                      let slotStyle = 'bg-slate-950 border-slate-700 text-slate-400';
+                      if (showExplanation || (hasAnswered && selectedAnswer === currentQ.correctAnswer)) {
+                        slotStyle =
+                          'bg-emerald-600 border-emerald-400 text-white shadow-lg shadow-emerald-500/20';
+                      } else if (scrambleError) {
+                        slotStyle = 'bg-rose-600/30 border-rose-500 text-rose-200 animate-pulse';
+                      } else if (isFilled) {
+                        slotStyle =
+                          'bg-indigo-600 border-indigo-400 text-white shadow-md hover:bg-indigo-500 cursor-pointer';
+                      }
+
+                      return (
+                        <button
+                          key={slotIdx}
+                          type="button"
+                          disabled={!isFilled || hasAnswered || showExplanation}
+                          onClick={() => handleRemoveScrambleSlot(slotIdx)}
+                          className={`w-10 h-12 sm:w-12 sm:h-14 rounded-2xl border-2 font-mono font-black text-lg sm:text-xl flex items-center justify-center transition-all ${slotStyle}`}
+                        >
+                          {char}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Error / Retry or Solved Status Banner */}
+                  {scrambleError && !hasAnswered && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-2 p-3 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs font-bold animate-fade-in">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                        <span>{scrambleError}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleClearScramble}
+                        className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shrink-0 cursor-pointer transition-colors"
+                      >
+                        Clear & Retry
+                      </button>
                     </div>
+                  )}
 
-                    {showResult && isCorrect && (
-                      <CheckCircle2 className="w-5 h-5 text-white shrink-0" />
-                    )}
-                    {showResult && isSelected && !isCorrect && (
-                      <AlertCircle className="w-5 h-5 text-white shrink-0" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+                  {hasAnswered && selectedAnswer === currentQ.correctAnswer && (
+                    <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 animate-fade-in">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>
+                        Unscrambled! +{lastEarnedPoints} pts — Waiting for round to conclude...
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Scrambled Source Letter Tiles & Action Controls */}
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      Tap Scrambled Letters in Order
+                    </span>
+                    <button
+                      type="button"
+                      disabled={hasAnswered || showExplanation || selectedTileIndices.length === 0}
+                      onClick={handleClearScramble}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-400 hover:text-amber-300 disabled:opacity-40 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Clear / Retry</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-center flex-wrap gap-2.5">
+                    {currentQ.options.map((letter, idx) => {
+                      const isUsed = selectedTileIndices.includes(idx);
+                      return (
+                        <button
+                          key={`${idx}_${letter}`}
+                          type="button"
+                          disabled={isUsed || hasAnswered || showExplanation}
+                          onClick={() => handleScrambleTileClick(idx)}
+                          className={`w-11 h-12 sm:w-13 sm:h-14 rounded-2xl border-2 font-mono font-black text-lg sm:text-xl flex items-center justify-center transition-all ${
+                            isUsed
+                              ? 'bg-slate-950/40 border-slate-800/50 text-slate-700 scale-95 cursor-not-allowed'
+                              : 'bg-slate-800 border-slate-700 hover:border-emerald-400 text-white shadow-md active:scale-90 cursor-pointer'
+                          }`}
+                        >
+                          {letter}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* 4 Interactive Option Buttons for Cultural Quiz */
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
+                {currentQ.options.map((option, idx) => {
+                  const isSelected = selectedAnswer === option;
+                  const isCorrect = option === currentQ.correctAnswer;
+                  const showResult = showExplanation || hasAnswered;
+
+                  let btnStyle = 'bg-slate-900 border-slate-800 text-slate-200 hover:border-indigo-500/60';
+
+                  if (showResult) {
+                    if (isCorrect) {
+                      btnStyle = 'bg-emerald-600 border-emerald-400 text-white font-black shadow-lg shadow-emerald-500/20';
+                    } else if (isSelected && !isCorrect) {
+                      btnStyle = 'bg-rose-600 border-rose-400 text-white font-black';
+                    } else {
+                      btnStyle = 'bg-slate-900/50 border-slate-800/50 text-slate-500';
+                    }
+                  }
+
+                  return (
+                    <button
+                      key={option}
+                      disabled={hasAnswered}
+                      onClick={() => handleAnswerSelect(option)}
+                      className={`w-full p-4 sm:p-4.5 rounded-2xl border text-sm sm:text-base font-bold text-left transition-all active:scale-98 flex items-center justify-between gap-2 cursor-pointer ${btnStyle}`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-7 h-7 rounded-lg bg-slate-800/80 text-slate-400 text-xs flex items-center justify-center font-mono shrink-0">
+                          {String.fromCharCode(65 + idx)}
+                        </span>
+                        <span className="leading-snug">{option}</span>
+                      </div>
+
+                      {showResult && isCorrect && (
+                        <CheckCircle2 className="w-5 h-5 text-white shrink-0" />
+                      )}
+                      {showResult && isSelected && !isCorrect && (
+                        <AlertCircle className="w-5 h-5 text-white shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Explanation Drawer when Round Answers Revealed */}
             {showExplanation && (

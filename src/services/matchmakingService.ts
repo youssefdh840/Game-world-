@@ -112,7 +112,7 @@ export interface JoinQueueResult {
 // Joins the worldwide matchmaking queue for REAL PLAYERS ONLY via Firestore gameRooms
 export async function joinMatchmakingQueue(
   user: UserProfile,
-  preferredCategory: GameCategory | 'mixed' = 'mixed',
+  preferredCategory: GameCategory | 'mixed' = 'cultural_quiz',
   targetCountryCode?: string
 ): Promise<JoinQueueResult> {
   const player = await ensurePlayerIdentity(user);
@@ -127,13 +127,20 @@ export async function joinMatchmakingQueue(
     const snap = await getDocs(q);
 
     // Find a valid waiting room created by another real player (not ourselves, not already joined, not expired)
+    const normalizeMode = (mode?: string) => {
+      if (mode === 'word_scramble') return 'word_scramble';
+      if (mode === 'guess_number') return 'guess_number';
+      return 'cultural_quiz';
+    };
+    const requestedModeGroup = normalizeMode(preferredCategory);
     const openRooms = snap.docs
       .map((d) => ({ ...(d.data() as GameRoom), id: d.id }))
       .filter((r) => {
         if (!r.id || !r.hostId || r.hostId === player.uid) return false;
         if (r.guestId && r.guestId !== '') return false;
         const createdMs = new Date(r.createdAt).getTime();
-        return !isNaN(createdMs) && createdMs >= threeMinutesAgo;
+        if (isNaN(createdMs) || createdMs < threeMinutesAgo) return false;
+        return normalizeMode(r.gameMode) === requestedModeGroup;
       });
 
     if (openRooms.length > 0) {
@@ -174,9 +181,10 @@ export async function joinMatchmakingQueue(
   // 2. No open waiting room: Player 1 creates a new room document in Firestore with status 'waiting'
   const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-  // Fetch diverse questions for this match
+  // Fetch diverse questions for this match (3 rounds for Guess the Number, 5 rounds otherwise)
+  const roundCount = preferredCategory === 'guess_number' ? 3 : 5;
   const questions = await fetchDynamicGameQuestions({
-    count: 5,
+    count: roundCount,
     category: preferredCategory,
     countryCode: targetCountryCode,
     userLevel: player.level,
@@ -307,8 +315,9 @@ export async function createPrivateDuelRoom(
   const roomCode = generateRoomCode();
   const roomId = `room_code_${roomCode}`;
 
+  const roundCount = preferredCategory === 'guess_number' ? 3 : 5;
   const questions = await fetchDynamicGameQuestions({
-    count: 5,
+    count: roundCount,
     category: preferredCategory,
     countryCode: targetCountryCode,
     userLevel: player.level,

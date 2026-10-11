@@ -1,4 +1,7 @@
 export type GameCategory =
+  | 'cultural_quiz'
+  | 'word_scramble'
+  | 'guess_number'
   | 'country_quiz'
   | 'guess_word'
   | 'mystery_food'
@@ -53,6 +56,7 @@ export interface CountryData {
 
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
 export type QuestionSubCategory =
+  | 'Flags'
   | 'Culture'
   | 'Geography'
   | 'History'
@@ -73,6 +77,8 @@ export interface Question {
   correctAnswer: string;
   explanation: string;
   imageUrl?: string;
+  scrambledWord?: string;
+  targetNumber?: number;
   audioNote?: string; // Melodic pattern or tone signature
   targetCountryCode?: string; // For map questions
   active: boolean;

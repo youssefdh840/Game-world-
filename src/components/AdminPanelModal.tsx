@@ -21,7 +21,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
   const [loadingReports, setLoadingReports] = useState(false);
 
   // New question form
-  const [category, setCategory] = useState<GameCategory>('country_quiz');
+  const [category, setCategory] = useState<GameCategory>('cultural_quiz');
   const [countryCode, setCountryCode] = useState('TN');
   const [prompt, setPrompt] = useState('');
   const [options, setOptions] = useState(['', '', '', '']);
@@ -175,7 +175,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                   Question Bank
                 </span>
                 <span className="text-2xl font-black text-indigo-400">{QUESTIONS.length}+</span>
-                <span className="text-[10px] text-slate-400 mt-1 block">Across 7 mini-games</span>
+                <span className="text-[10px] text-slate-400 mt-1 block">Unified Cultural Quiz</span>
               </div>
             </div>
 
@@ -243,13 +243,12 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                   onChange={(e) => setCategory(e.target.value as GameCategory)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white"
                 >
-                  <option value="country_quiz">Country Quiz</option>
-                  <option value="guess_word">Guess the Word</option>
-                  <option value="mystery_food">Mystery Food</option>
-                  <option value="music_culture">Music & Instruments</option>
-                  <option value="world_map">World Map</option>
-                  <option value="cultural_mime">Traditions</option>
-                  <option value="duel">1 vs 1 Duel</option>
+                  <option value="cultural_quiz">Guess the Country (Cultural Quiz)</option>
+                  <option value="country_quiz">Flags, Landmarks &amp; Facts</option>
+                  <option value="mystery_food">Food &amp; Gastronomy</option>
+                  <option value="guess_word">Languages &amp; Words</option>
+                  <option value="music_culture">Music &amp; Instruments</option>
+                  <option value="cultural_mime">Traditions &amp; Festivals</option>
                 </select>
               </div>
 

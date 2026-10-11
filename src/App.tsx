@@ -78,6 +78,14 @@ function AppContent() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(sounds.isEnabled());
 
+  const startCulturalQuizMatchmaking = (
+    category: GameCategory | 'mixed' = 'cultural_quiz',
+    targetCountry?: string
+  ) => {
+    setMatchmakingTargetCountry(targetCountry);
+    setMatchmakingCategory(category);
+  };
+
   // Passport stamps
   const [stamps, setStamps] = useState<PassportStamp[]>([]);
 
@@ -155,8 +163,10 @@ function AppContent() {
           const prevMode = activeRoom.gameMode;
           const prevCountry = activeRoom.targetCountryCode;
           setActiveRoom(null);
-          setMatchmakingTargetCountry(prevCountry);
-          setMatchmakingCategory(prevMode);
+          startCulturalQuizMatchmaking(
+            prevMode === 'word_scramble' ? 'word_scramble' : 'cultural_quiz',
+            prevCountry
+          );
         }}
       />
     );
@@ -185,10 +195,7 @@ function AppContent() {
       <main className="relative z-10 flex-1 w-full max-w-md sm:max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto px-4 sm:px-6 md:px-8 pt-5 sm:pt-7 pb-28 sm:pb-32">
         {currentTab === 'home' && (
           <HomeScreen
-            onStartMatchmaking={() => {
-              setMatchmakingTargetCountry(undefined);
-              setMatchmakingCategory('mixed');
-            }}
+            onStartMatchmaking={() => startCulturalQuizMatchmaking('cultural_quiz')}
             onNavigateTab={(tab) => setCurrentTab(tab)}
             onOpenDailyChallenge={() => setIsDailyChallengeOpen(true)}
             onOpenAuth={() => setIsAuthOpen(true)}
@@ -198,19 +205,13 @@ function AppContent() {
         {currentTab === 'explore' && (
           <ExploreScreen
             passportStamps={stamps}
-            onStartMatchmakingWithCountry={(code) => {
-              setMatchmakingTargetCountry(code);
-              setMatchmakingCategory('mixed');
-            }}
+            onStartMatchmakingWithCountry={(code) => startCulturalQuizMatchmaking('cultural_quiz', code)}
           />
         )}
 
         {currentTab === 'play' && (
           <PlayScreen
-            onStartMatch={(cat) => {
-              setMatchmakingTargetCountry(undefined);
-              setMatchmakingCategory(cat);
-            }}
+            onStartMatch={(cat) => startCulturalQuizMatchmaking(cat)}
           />
         )}
 
@@ -218,10 +219,7 @@ function AppContent() {
           <PassportScreen
             user={userProfile}
             stamps={stamps}
-            onStartMatchWithCountry={(code) => {
-              setMatchmakingTargetCountry(code);
-              setMatchmakingCategory('mixed');
-            }}
+            onStartMatchWithCountry={(code) => startCulturalQuizMatchmaking('cultural_quiz', code)}
           />
         )}
 

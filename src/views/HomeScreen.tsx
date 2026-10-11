@@ -202,8 +202,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   🎯
                 </div>
                 <div>
-                  <h4 className="text-sm sm:text-base font-extrabold text-white">All Mini-Games</h4>
-                  <p className="text-xs text-slate-400 mt-0.5">7 unique cultural game modes</p>
+                  <h4 className="text-sm sm:text-base font-extrabold text-white">Cultural Quiz</h4>
+                  <p className="text-xs text-slate-400 mt-0.5">Flags, food, monuments &amp; facts</p>
                 </div>
               </button>
             </div>
