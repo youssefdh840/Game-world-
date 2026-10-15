@@ -137,12 +137,12 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="min-h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-4 text-slate-100">
-        <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 flex items-center justify-center text-3xl shadow-xl shadow-rose-500/20 animate-bounce mb-4">
-          🌍
+      <div className="min-h-[100dvh] w-full bg-[#0B0F19] flex flex-col items-center justify-center p-4 text-slate-100">
+        <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-3xl shadow-[0_0_30px_rgba(6,182,212,0.25)] mb-4 animate-pulse">
+          🧭
         </div>
-        <h1 className="text-xl font-black tracking-tight text-white">WORLD CHALLENGE</h1>
-        <p className="text-xs text-slate-400 mt-1">Connecting to global game arena...</p>
+        <h1 className="text-xl font-black tracking-widest text-white">MAPIA</h1>
+        <p className="text-xs text-cyan-400 font-semibold tracking-wider uppercase mt-1">World Challenge</p>
       </div>
     );
   }
@@ -164,7 +164,11 @@ function AppContent() {
           const prevCountry = activeRoom.targetCountryCode;
           setActiveRoom(null);
           startCulturalQuizMatchmaking(
-            prevMode === 'word_scramble' ? 'word_scramble' : 'cultural_quiz',
+            prevMode === 'word_scramble'
+              ? 'word_scramble'
+              : prevMode === 'guess_number'
+              ? 'guess_number'
+              : 'cultural_quiz',
             prevCountry
           );
         }}
@@ -173,12 +177,11 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-[100dvh] w-full bg-slate-950 text-slate-100 selection:bg-rose-500 selection:text-white flex flex-col relative overflow-x-hidden">
-      {/* Subtle Full-Viewport Ambient Background Glows for Desktop & Tablet */}
+    <div className="min-h-[100dvh] w-full bg-[#0B0F19] text-slate-100 selection:bg-cyan-500 selection:text-slate-950 flex flex-col relative overflow-x-hidden">
+      {/* Subtle Atmospheric Grid & Explorer Depth (clean, zero-slop ambient lighting) */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
-        <div className="absolute -top-40 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl" />
-        <div className="absolute top-1/3 -right-32 w-96 h-96 bg-rose-600/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 left-1/3 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl" />
+        <div className="absolute -top-40 left-1/3 w-[600px] h-[600px] bg-cyan-500/[0.035] rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute -bottom-40 right-1/4 w-[500px] h-[500px] bg-teal-500/[0.03] rounded-full blur-[120px] pointer-events-none" />
       </div>
 
       {/* Top Header */}

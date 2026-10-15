@@ -226,9 +226,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   return (
     <div className="max-w-4xl mx-auto space-y-6 sm:space-y-7 pb-8 animate-fade-in">
       {/* Profile Card Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-slate-900 border border-slate-800 p-5 sm:p-7 md:p-8 shadow-xl text-center">
+      <div className="relative overflow-hidden rounded-3xl bg-slate-800/80 border border-slate-700/60 p-5 sm:p-7 md:p-8 shadow-xl text-center">
         {/* Glow backdrop */}
-        <div className="absolute -top-10 -right-10 w-36 h-36 bg-indigo-500/15 rounded-full blur-2xl pointer-events-none" />
+        <div className="absolute -top-10 -right-10 w-36 h-36 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
 
         {/* Hidden File Input for Direct Avatar Upload */}
         <input
@@ -243,7 +243,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <img
             src={isEditing ? avatar || liveUser.avatar : liveUser.avatar}
             alt={liveUser.username}
-            className="w-20 h-20 sm:w-24 sm:h-24 mx-auto rounded-3xl object-cover ring-2 ring-indigo-500 shadow-xl bg-slate-800"
+            className="w-20 h-20 sm:w-24 sm:h-24 mx-auto rounded-3xl object-cover ring-2 ring-indigo-500/50 shadow-xl bg-slate-900"
           />
           <button
             type="button"
@@ -269,7 +269,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             className="absolute -top-1.5 -right-1.5 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-indigo-600 hover:bg-indigo-500 border-2 border-slate-900 text-white flex items-center justify-center shadow-lg transition-transform active:scale-95 cursor-pointer"
           >
             {avatarUploading ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
             ) : (
               <Camera className="w-3.5 h-3.5" />
             )}
@@ -280,7 +280,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         </div>
 
         <h2 className="text-xl sm:text-2xl font-black text-white">{liveUser.username}</h2>
-        <p className="text-xs sm:text-sm text-indigo-300 font-semibold mt-1">
+        <p className="text-xs sm:text-sm text-slate-300 font-semibold mt-1">
           {liveUser.countryName} • {liveUser.preferredLanguage || 'English'}
         </p>
         <p className="text-xs sm:text-sm text-slate-400 mt-2 max-w-md mx-auto italic leading-relaxed">
@@ -288,16 +288,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         </p>
 
         {/* Level & XP */}
-        <div className="mt-5 pt-4 border-t border-slate-800/80 max-w-xl mx-auto">
+        <div className="mt-5 pt-4 border-t border-slate-700/60 max-w-xl mx-auto">
           <div className="flex justify-between items-center text-xs sm:text-sm mb-1.5 font-bold">
-            <span className="text-amber-400">Level {levelInfo.level}</span>
+            <span className="text-indigo-400 font-black">Level {levelInfo.level}</span>
             <span className="text-slate-400 font-mono">
               {levelInfo.xpInCurrentLevel} / {levelInfo.nextLevelThreshold - levelInfo.currentLevelBase} XP ({liveUser.xp || 0} Total XP)
             </span>
           </div>
-          <div className="w-full h-3 bg-slate-800 rounded-full overflow-hidden p-0.5">
+          <div className="w-full h-3 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-700/50">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-400 via-rose-500 to-indigo-500"
+              className="h-full rounded-full bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-500"
               style={{ width: `${Math.max(5, levelInfo.progressPercent)}%` }}
             />
           </div>
@@ -309,7 +309,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             sounds.playPop();
             setIsEditing(!isEditing);
           }}
-          className="mt-5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-indigo-400 hover:text-indigo-300 bg-indigo-950/60 border border-indigo-500/30 px-4 py-2 rounded-xl cursor-pointer transition-colors"
+          className="mt-5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-indigo-400 hover:text-indigo-300 bg-slate-900 border border-slate-700 px-4 py-2 rounded-xl cursor-pointer transition-colors"
         >
           <Edit2 className="w-3.5 h-3.5" />
           <span>{isEditing ? 'Cancel Editing' : 'Edit Profile'}</span>
@@ -494,7 +494,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <button
             type="submit"
             disabled={saving}
-            className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md active:scale-98 transition-all cursor-pointer disabled:opacity-50"
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md active:scale-98 transition-all cursor-pointer disabled:opacity-50"
           >
             {saving ? (
               <>
@@ -513,47 +513,47 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
       {/* Career Statistics Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
+        <div className="bg-slate-800/80 border border-slate-700/60 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-[10px] sm:text-xs font-bold uppercase">Games Played</span>
-            <Gamepad2 className="w-4 h-4 text-indigo-400 shrink-0" />
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">Games Played</span>
+            <Gamepad2 className="w-4 h-4 text-sky-400 shrink-0" />
           </div>
           <span className="text-2xl sm:text-3xl font-black text-white">{totalGamesPlayed}</span>
-          <span className="text-[10px] sm:text-xs text-slate-500 mt-1">Total duels &amp; quests</span>
+          <span className="text-[10px] sm:text-xs text-slate-400 mt-1">Total duels &amp; quests</span>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
+        <div className="bg-slate-800/80 border border-slate-700/60 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-[10px] sm:text-xs font-bold uppercase">Victories</span>
-            <Trophy className="w-4 h-4 text-yellow-400 shrink-0" />
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">Victories</span>
+            <Trophy className="w-4 h-4 text-amber-400 shrink-0" />
           </div>
-          <span className="text-2xl sm:text-3xl font-black text-yellow-400">{totalVictories}</span>
-          <span className="text-[10px] sm:text-xs text-slate-500 mt-1">{winRate}% win rate</span>
+          <span className="text-2xl sm:text-3xl font-black text-amber-400">{totalVictories}</span>
+          <span className="text-[10px] sm:text-xs text-slate-400 mt-1">{winRate}% win rate</span>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
+        <div className="bg-slate-800/80 border border-slate-700/60 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-[10px] sm:text-xs font-bold uppercase">Discovered</span>
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">Discovered</span>
             <Globe className="w-4 h-4 text-emerald-400 shrink-0" />
           </div>
           <span className="text-2xl sm:text-3xl font-black text-emerald-400">
             {liveUser.discoveredCountries?.length || 1}
           </span>
-          <span className="text-[10px] sm:text-xs text-slate-500 mt-1">Country visas stamped</span>
+          <span className="text-[10px] sm:text-xs text-slate-400 mt-1">Country visas stamped</span>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
+        <div className="bg-slate-800/80 border border-slate-700/60 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-[10px] sm:text-xs font-bold uppercase">Play Streak</span>
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">Play Streak</span>
             <Flame className="w-4 h-4 text-amber-400 shrink-0" />
           </div>
           <span className="text-2xl sm:text-3xl font-black text-amber-400">{liveUser.dailyStreak || 1}</span>
-          <span className="text-[10px] sm:text-xs text-slate-500 mt-1">Days in a row</span>
+          <span className="text-[10px] sm:text-xs text-slate-400 mt-1">Days in a row</span>
         </div>
       </div>
 
       {/* Badges & Achievements Showcase */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 md:p-7 shadow-xl">
+      <div className="bg-slate-800/80 border border-slate-700/60 rounded-3xl p-5 sm:p-6 md:p-7 shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Award className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
@@ -662,9 +662,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   sounds.playPop();
                   onOpenAuth();
                 }}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20 active:scale-95 transition-all cursor-pointer"
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 via-rose-600 to-indigo-600 hover:opacity-95 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20 active:scale-95 transition-all cursor-pointer"
               >
-                <LogIn className="w-4 h-4 stroke-[2.5]" />
+                <LogIn className="w-4 h-4" />
                 <span>Log In / Create Account</span>
               </button>
             </div>

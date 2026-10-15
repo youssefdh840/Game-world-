@@ -897,14 +897,10 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     const matchQuestions = room.questions || [];
 
     return (
-      <div className="min-h-[100dvh] w-full bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 animate-fade-in">
-        <div className="w-full max-w-md sm:max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl text-center relative overflow-hidden">
-          {/* Confetti / Glow Backdrop */}
-          <div className="absolute -top-12 -right-12 w-48 h-48 bg-rose-500/20 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-
+      <div className="min-h-[100dvh] w-full bg-[#0B0F19] text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 animate-fade-in">
+        <div className="w-full max-w-md sm:max-w-lg bg-[#0E1526] border border-cyan-500/25 rounded-3xl p-6 sm:p-8 shadow-2xl text-center relative overflow-hidden">
           {/* Trophy / Result Icon */}
-          <div className="w-20 h-20 sm:w-24 sm:h-24 mx-auto rounded-3xl bg-gradient-to-tr from-amber-400 via-rose-500 to-indigo-600 flex items-center justify-center text-4xl sm:text-5xl shadow-xl shadow-amber-500/20 mb-4 animate-bounce">
+          <div className="w-20 h-20 sm:w-24 sm:h-24 mx-auto rounded-3xl bg-slate-900 border-2 border-amber-400/80 flex items-center justify-center text-4xl sm:text-5xl shadow-[0_0_24px_rgba(245,158,11,0.25)] mb-4 animate-bounce">
             {isWinner ? '🏆' : isTie ? '🤝' : '🥈'}
           </div>
 
@@ -939,29 +935,29 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           </p>
 
           {/* Final Score Duel Card */}
-          <div className="my-5 p-4 sm:p-5 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-around">
+          <div className="my-5 p-4 sm:p-5 rounded-2xl bg-[#0B0F19] border border-slate-800 flex items-center justify-around">
             {/* You */}
             <div className="flex flex-col items-center">
               <span className="text-2xl sm:text-3xl mb-1">{user.countryFlag}</span>
               <span className="text-xs sm:text-sm font-bold text-slate-300 truncate max-w-[100px] sm:max-w-[140px]">{user.username}</span>
-              <span className="text-2xl sm:text-3xl font-black text-emerald-400 mt-0.5">{myScore}</span>
-              <span className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">Total Score</span>
+              <span className="text-2xl sm:text-3xl font-black text-cyan-400 mt-0.5">{myScore}</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">Your Score</span>
             </div>
 
-            <div className="text-xs sm:text-sm font-black text-slate-500 uppercase px-2">VS</div>
+            <div className="text-xs sm:text-sm font-black text-slate-600 uppercase px-2">VS</div>
 
             {/* Opponent */}
             <div className="flex flex-col items-center">
               <span className="text-2xl sm:text-3xl mb-1">{opponentFlag}</span>
               <span className="text-xs sm:text-sm font-bold text-slate-300 truncate max-w-[100px] sm:max-w-[140px]">{opponentName}</span>
               <span className="text-2xl sm:text-3xl font-black text-rose-400 mt-0.5">{opponentScore}</span>
-              <span className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">Total Score</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">Opponent Score</span>
             </div>
           </div>
 
           {/* Correct Words / Secret Numbers / Round Summary List */}
           {matchQuestions.length > 0 && (
-            <div className="mb-5 p-4 rounded-2xl bg-slate-950/70 border border-slate-800 text-left">
+            <div className="mb-5 p-4 rounded-2xl bg-[#0B0F19] border border-slate-800 text-left">
               <div className="flex items-center justify-between mb-2.5">
                 <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-emerald-400">
                   {isGuessNumber
@@ -978,7 +974,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                 {matchQuestions.map((q, idx) => (
                   <div
                     key={q.id || idx}
-                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-900/90 border border-slate-800/80 text-xs"
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="w-5 h-5 rounded-md bg-slate-800 text-slate-400 font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
@@ -1021,17 +1017,17 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
           {/* XP & Coins Rewards */}
           <div className="grid grid-cols-2 gap-3.5 mb-6">
-            <div className="bg-slate-800/60 border border-slate-700/40 rounded-2xl p-3.5 sm:p-4 text-center">
-              <span className="text-[10px] sm:text-xs font-bold text-indigo-400 uppercase block">
+            <div className="bg-[#0B0F19] border border-slate-800 rounded-2xl p-3.5 sm:p-4 text-center">
+              <span className="text-[10px] sm:text-xs font-black text-amber-400 uppercase tracking-wider block">
                 {isWinner ? 'WINNER XP REWARD' : 'PARTICIPATION XP'}
               </span>
-              <span className="text-xl sm:text-2xl font-black text-indigo-300">
+              <span className="text-xl sm:text-2xl font-black text-amber-300 font-mono">
                 +{awardedResults?.xpEarned || (isWordScramble || isGuessNumber ? (isWinner ? 180 : 40) : isWinner ? 250 : 100)} XP
               </span>
             </div>
-            <div className="bg-slate-800/60 border border-slate-700/40 rounded-2xl p-3.5 sm:p-4 text-center">
-              <span className="text-[10px] sm:text-xs font-bold text-yellow-400 uppercase block">COINS REWARD</span>
-              <span className="text-xl sm:text-2xl font-black text-yellow-300">
+            <div className="bg-[#0B0F19] border border-slate-800 rounded-2xl p-3.5 sm:p-4 text-center">
+              <span className="text-[10px] sm:text-xs font-black text-amber-400 uppercase tracking-wider block">COINS REWARD</span>
+              <span className="text-xl sm:text-2xl font-black text-amber-300 font-mono">
                 +{awardedResults?.coinsEarned || (isWinner ? 50 : 20)} 🪙
               </span>
             </div>
@@ -1044,9 +1040,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                 sounds.playPop();
                 onRematch();
               }}
-              className="w-full py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-rose-600 to-indigo-600 hover:opacity-95 text-white font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 shadow-xl shadow-rose-500/20 active:scale-98 transition-all cursor-pointer"
+              className="w-full py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 active:translate-y-0.5 transition-all cursor-pointer"
             >
-              <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
+              <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
               <span>Rematch / Play Another</span>
             </button>
 
@@ -1055,7 +1051,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                 sounds.playPop();
                 onExitRoom();
               }}
-              className="w-full py-3 sm:py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs sm:text-sm active:scale-98 transition-all cursor-pointer"
+              className="w-full py-3 sm:py-3.5 rounded-2xl bg-[#0B0F19] hover:bg-slate-800 border border-slate-800 text-slate-300 font-bold text-xs sm:text-sm active:translate-y-0.5 transition-all cursor-pointer"
             >
               Return to Dashboard
             </button>
@@ -1069,15 +1065,15 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   // ACTIVE PLAYING GAME ARENA
   // -------------------------------------------------------------
   return (
-    <div className="w-full min-h-[100dvh] bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-x-hidden select-none">
-      {/* Subtle Full-Viewport Ambient Background Glows */}
+    <div className="w-full min-h-[100dvh] bg-[#0B0F19] text-slate-100 flex flex-col justify-between relative overflow-x-hidden select-none">
+      {/* Subtle Atmospheric Ambience */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
-        <div className="absolute -top-32 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-rose-600/10 rounded-full blur-3xl" />
+        <div className="absolute -top-32 left-1/4 w-96 h-96 bg-cyan-500/[0.035] rounded-full blur-[100px]" />
+        <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-teal-500/[0.03] rounded-full blur-[100px]" />
       </div>
 
       {/* Top Header: VS Scoreboard */}
-      <div className="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 md:px-8 pt-safe pb-3 sm:py-4 sticky top-0 z-30 shadow-md">
+      <div className="bg-[#0E1526]/95 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-6 md:px-8 pt-safe pb-3 sm:py-4 sticky top-0 z-30 shadow-md">
         <div className="w-full max-w-md sm:max-w-xl md:max-w-2xl mx-auto">
           <div className="flex items-center justify-between gap-2">
             {/* Player A (You) */}
@@ -1086,7 +1082,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                 <img
                   src={user.avatar}
                   alt={user.username}
-                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-indigo-500 bg-slate-800"
+                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-cyan-400/80 shadow-[0_0_10px_rgba(6,182,212,0.3)] bg-slate-900"
                 />
                 <span className="absolute -bottom-1 -right-1 text-xs sm:text-sm">{user.countryFlag}</span>
               </div>
@@ -1094,17 +1090,17 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                 <span className="text-xs sm:text-sm font-bold text-white block truncate max-w-[85px] sm:max-w-[140px]">
                   {user.username}
                 </span>
-                <span className="text-sm sm:text-base font-black text-indigo-400 font-mono">{myScore}</span>
+                <span className="text-sm sm:text-base font-black text-cyan-400 font-mono">{myScore}</span>
               </div>
             </div>
 
             {/* Round & Timer Indicator */}
             <div className="text-center px-2 flex items-center gap-2 shrink-0">
               <div>
-                <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-slate-400 block">
+                <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-400 block">
                   ROUND {room.currentRound} / {room.totalRounds}
                 </span>
-                <div className="inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-800 border border-slate-700 text-sm sm:text-base font-mono font-black text-amber-400 mt-0.5">
+                <div className="inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-[#0B0F19] border border-slate-700 text-sm sm:text-base font-mono font-black text-cyan-400 mt-0.5">
                   {timeLeft}s
                 </div>
               </div>
@@ -1126,7 +1122,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                 <img
                   src={opponentAvatar}
                   alt={opponentName}
-                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-rose-500 bg-slate-800"
+                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-rose-500/80 shadow-[0_0_10px_rgba(244,63,94,0.3)] bg-slate-900"
                 />
                 <span className="absolute -bottom-1 -left-1 text-xs sm:text-sm">{opponentFlag}</span>
               </div>
@@ -1143,7 +1139,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           <div className="w-full h-1.5 sm:h-2 bg-slate-800 rounded-full mt-3 overflow-hidden">
             <div
               className={`h-full transition-all duration-300 ${
-                timeLeft <= 5 ? 'bg-rose-500 animate-pulse' : 'bg-gradient-to-r from-amber-400 to-rose-500'
+                timeLeft <= 5 ? 'bg-rose-500 animate-pulse' : 'bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400'
               }`}
               style={{ width: `${(timeLeft / roundDurationSeconds) * 100}%` }}
             />
@@ -1157,7 +1153,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           <div className="space-y-5 sm:space-y-6">
             {/* Category Pill & Country Origin */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-3 py-1 rounded-full">
+              <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full">
                 {(() => {
                   if (isGuessNumber) {
                     return 'Guess the Number • Numbers & Logic';
@@ -1186,7 +1182,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                   return `Cultural Quiz • ${currentQ.subCategory || 'National Facts'}`;
                 })()}
               </span>
-              <span className="text-xs sm:text-sm text-slate-400 font-bold flex items-center gap-1.5">
+              <span className="text-xs sm:text-sm text-slate-300 font-bold flex items-center gap-1.5">
                 <span>
                   {isGuessNumber
                     ? 'Range: 1–100'
@@ -1214,19 +1210,19 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
             </div>
 
             {/* Question Prompt Card */}
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 md:p-8 shadow-xl text-center relative overflow-hidden space-y-4">
+            <div className="bg-slate-800/80 border border-slate-700/60 rounded-3xl p-5 sm:p-7 md:p-8 shadow-xl text-center relative overflow-hidden space-y-4">
               {currentQ.imageUrl && (
                 <div className="flex justify-center">
                   <img
                     src={currentQ.imageUrl}
                     alt="Cultural Quiz Visual"
-                    className="max-h-36 sm:max-h-44 w-auto rounded-2xl border border-slate-700/80 shadow-lg object-contain bg-slate-950/60 p-1.5"
+                    className="max-h-36 sm:max-h-44 w-auto rounded-2xl border border-slate-700/80 shadow-lg object-contain bg-slate-900/60 p-1.5"
                   />
                 </div>
               )}
 
               {isWordScramble && (
-                <div className="inline-flex items-center gap-2 text-[11px] sm:text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full">
+                <div className="inline-flex items-center gap-2 text-[11px] sm:text-xs font-bold text-sky-400 bg-sky-500/10 border border-sky-500/30 px-3 py-1 rounded-full">
                   <span>⚡ Speed Score: {calculateWordScramblePoints(timeLeft)} pts</span>
                   <span>(100 + {timeLeft}s × 5)</span>
                 </div>
@@ -1574,7 +1570,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                   const isCorrect = option === currentQ.correctAnswer;
                   const showResult = showExplanation || hasAnswered;
 
-                  let btnStyle = 'bg-slate-900 border-slate-800 text-slate-200 hover:border-indigo-500/60';
+                  let btnStyle = 'bg-slate-800/80 border-slate-700/70 text-slate-100 hover:border-amber-400/60 hover:bg-slate-800';
 
                   if (showResult) {
                     if (isCorrect) {
@@ -1582,7 +1578,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                     } else if (isSelected && !isCorrect) {
                       btnStyle = 'bg-rose-600 border-rose-400 text-white font-black';
                     } else {
-                      btnStyle = 'bg-slate-900/50 border-slate-800/50 text-slate-500';
+                      btnStyle = 'bg-slate-900/60 border-slate-800/60 text-slate-500';
                     }
                   }
 
@@ -1594,7 +1590,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                       className={`w-full p-4 sm:p-4.5 rounded-2xl border text-sm sm:text-base font-bold text-left transition-all active:scale-98 flex items-center justify-between gap-2 cursor-pointer ${btnStyle}`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className="w-7 h-7 rounded-lg bg-slate-800/80 text-slate-400 text-xs flex items-center justify-center font-mono shrink-0">
+                        <span className="w-7 h-7 rounded-lg bg-slate-900 text-amber-400 text-xs flex items-center justify-center font-mono font-bold shrink-0">
                           {String.fromCharCode(65 + idx)}
                         </span>
                         <span className="leading-snug">{option}</span>
@@ -1614,7 +1610,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
             {/* Explanation Drawer when Round Answers Revealed */}
             {showExplanation && (
-              <div className="p-4 sm:p-5 rounded-2xl bg-indigo-950/40 border border-indigo-500/40 text-xs sm:text-sm text-indigo-200 animate-fade-in flex items-start gap-3">
+              <div className="p-4 sm:p-5 rounded-2xl bg-slate-800/90 border border-slate-700/80 text-xs sm:text-sm text-slate-200 animate-fade-in flex items-start gap-3">
                 <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-extrabold text-white block mb-0.5">Cultural Fact:</span>
@@ -1651,7 +1647,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                 sounds.playPop();
                 setIsChatOpen(!isChatOpen);
               }}
-              className="p-2.5 rounded-xl bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 transition-colors relative cursor-pointer"
+              className="p-2.5 rounded-xl bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 transition-colors relative cursor-pointer"
               title="In-game Chat"
             >
               <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -1673,14 +1669,14 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
       {/* In-Game Slide-Up Chat Panel */}
       {isChatOpen && (
-        <div className="fixed inset-x-0 bottom-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 p-4 sm:p-5 max-w-md sm:max-w-xl mx-auto rounded-t-3xl shadow-2xl animate-slide-up">
+        <div className="fixed inset-x-0 bottom-0 z-40 bg-[#0E1526]/95 backdrop-blur-md border-t border-slate-800 p-4 sm:p-5 max-w-md sm:max-w-xl mx-auto rounded-t-3xl shadow-2xl animate-slide-up">
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-300">
               Live Duel Chat
             </h4>
             <button
               onClick={() => setIsChatOpen(false)}
-              className="p-1 text-slate-400 hover:text-white"
+              className="p-1 text-slate-400 hover:text-white cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1706,7 +1702,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                     <div
                       className={`px-3 py-1.5 rounded-2xl max-w-[80%] ${
                         isMe
-                          ? 'bg-indigo-600 text-white rounded-br-xs'
+                          ? 'bg-cyan-500 text-slate-950 font-semibold rounded-br-xs'
                           : 'bg-slate-800 text-slate-200 rounded-bl-xs'
                       }`}
                     >
@@ -1726,11 +1722,11 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               maxLength={150}
-              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+              className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400"
             />
             <button
               type="submit"
-              className="p-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer"
+              className="p-2 rounded-xl bg-cyan-500 text-slate-950 hover:bg-cyan-400 font-bold cursor-pointer"
             >
               <Send className="w-4 h-4" />
             </button>

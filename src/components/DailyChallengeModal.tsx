@@ -147,14 +147,14 @@ export const DailyChallengeModal: React.FC<DailyChallengeModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/85 backdrop-blur-md animate-fade-in overflow-y-auto">
-      <div className="relative w-full max-w-md sm:max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl text-slate-100 my-auto">
+      <div className="relative w-full max-w-md sm:max-w-lg bg-slate-800/95 border border-slate-700/60 rounded-3xl p-6 sm:p-8 shadow-2xl text-slate-100 my-auto">
         {/* Close Button */}
         <button
           onClick={() => {
             sounds.playPop();
             onClose();
           }}
-          className="absolute top-4 right-4 sm:top-5 sm:right-5 p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 cursor-pointer"
+          className="absolute top-4 right-4 sm:top-5 sm:right-5 p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-700/60 cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
@@ -169,7 +169,7 @@ export const DailyChallengeModal: React.FC<DailyChallengeModalProps> = ({
           <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
             Today: {spotlightCountry.name}
           </h2>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-300 mt-1">
             5 cultural questions • Up to <span className="text-amber-400 font-bold">+300 XP &amp; 50 🪙</span>
           </p>
         </div>
@@ -204,7 +204,7 @@ export const DailyChallengeModal: React.FC<DailyChallengeModalProps> = ({
 
             <button
               disabled
-              className="w-full py-3 rounded-2xl bg-slate-800/80 border border-slate-700 text-slate-500 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-not-allowed"
+              className="w-full py-3 rounded-2xl bg-slate-900 border border-slate-700 text-slate-500 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-not-allowed"
             >
               <Lock className="w-3.5 h-3.5" />
               <span>Start Daily Quest (Completed Today)</span>
@@ -216,7 +216,7 @@ export const DailyChallengeModal: React.FC<DailyChallengeModalProps> = ({
                 onClose();
               }}
               disabled={claiming}
-              className="w-full py-3.5 rounded-2xl bg-amber-500 text-slate-950 font-extrabold text-xs sm:text-sm cursor-pointer hover:bg-amber-400 transition-colors"
+              className="w-full py-3.5 rounded-2xl bg-amber-500 text-slate-950 font-black text-xs sm:text-sm cursor-pointer hover:bg-amber-400 transition-colors"
             >
               {claiming ? 'Updating Stats...' : 'Done & Return'}
             </button>
@@ -224,7 +224,7 @@ export const DailyChallengeModal: React.FC<DailyChallengeModalProps> = ({
         ) : !hasStarted ? (
           /* State 2: Ready to Start (Pre-check passed) */
           <div className="text-center py-4 space-y-5">
-            <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 sm:p-5 text-xs sm:text-sm text-slate-300 space-y-2 text-left">
+            <div className="bg-slate-900/80 border border-slate-700/60 rounded-2xl p-4 sm:p-5 text-xs sm:text-sm text-slate-300 space-y-2 text-left">
               <p className="font-bold text-white">Daily Quest Rules:</p>
               <ul className="list-disc list-inside space-y-1.5 text-slate-400">
                 <li>You have <span className="text-amber-400 font-bold">1 attempt per day</span> (win or lose).</li>
@@ -235,10 +235,10 @@ export const DailyChallengeModal: React.FC<DailyChallengeModalProps> = ({
             <button
               onClick={handleStartQuest}
               disabled={alreadyAttemptedToday}
-              className="w-full py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-400 hover:to-rose-400 disabled:opacity-50 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all"
+              className="w-full py-3.5 sm:py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer transition-all"
             >
               <span>Start Daily Quest</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4 stroke-[2.5]" />
             </button>
           </div>
         ) : (
@@ -246,10 +246,10 @@ export const DailyChallengeModal: React.FC<DailyChallengeModalProps> = ({
           <div className="space-y-4 sm:space-y-5">
             <div className="flex items-center justify-between text-xs sm:text-sm text-slate-400 font-bold">
               <span>Question {currentIndex + 1} of 5</span>
-              <span className="text-amber-400">Score: {score}</span>
+              <span className="text-amber-400 font-mono font-bold">Score: {score}</span>
             </div>
 
-            <div className="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-4 sm:p-5 text-center">
+            <div className="bg-slate-900/80 border border-slate-700/60 rounded-2xl p-4 sm:p-5 text-center">
               <p className="text-sm sm:text-base font-bold text-white leading-relaxed">
                 {currentQ.prompt}
               </p>
@@ -259,7 +259,7 @@ export const DailyChallengeModal: React.FC<DailyChallengeModalProps> = ({
               {currentQ.options.map((opt) => {
                 const isSelected = selectedOption === opt;
                 const isCorrect = opt === currentQ.correctAnswer;
-                let btnClass = 'bg-slate-800/60 border-slate-700/50 text-slate-200 hover:border-amber-500/50';
+                let btnClass = 'bg-slate-900/80 border-slate-700/70 text-slate-200 hover:border-amber-400/60';
 
                 if (selectedOption !== null) {
                   if (isCorrect) {

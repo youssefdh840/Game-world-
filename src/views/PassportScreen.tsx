@@ -43,7 +43,7 @@ export const PassportScreen: React.FC<PassportScreenProps> = ({
         <div className="absolute top-2 right-2 text-7xl opacity-5 pointer-events-none font-serif">
           PASSPORT
         </div>
-        <div className="absolute -top-10 -right-10 w-40 h-40 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="absolute -top-10 -right-10 w-40 h-40 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
 
         {/* Passport Header */}
         <div className="flex items-center justify-between border-b border-amber-500/20 pb-3.5 mb-5">
@@ -69,7 +69,7 @@ export const PassportScreen: React.FC<PassportScreenProps> = ({
             <img
               src={user.avatar}
               alt={user.username}
-              className="w-20 h-24 sm:w-24 sm:h-28 rounded-2xl object-cover ring-2 ring-amber-500/50 shadow-lg bg-slate-800"
+              className="w-20 h-24 sm:w-24 sm:h-28 rounded-2xl object-cover ring-2 ring-amber-500/50 shadow-lg bg-slate-900"
             />
             <span className="absolute -bottom-1 -right-1 text-xl bg-slate-900 rounded-full shadow p-0.5">
               {user.countryFlag}
@@ -113,9 +113,9 @@ export const PassportScreen: React.FC<PassportScreenProps> = ({
             </span>
           </div>
 
-          <div className="w-full h-3 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-amber-500/20">
+          <div className="w-full h-3 bg-[#0B0F19] rounded-full overflow-hidden p-0.5 border border-amber-500/20">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-500 transition-all duration-700"
+              className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 transition-all duration-700 shadow-[0_0_8px_rgba(6,182,212,0.4)]"
               style={{ width: `${Math.max(4, (discoveredCodes.size / 195) * 100)}%` }}
             />
           </div>
@@ -132,7 +132,7 @@ export const PassportScreen: React.FC<PassportScreenProps> = ({
             placeholder="Search passport countries..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-10 pr-4 py-2.5 sm:py-3 text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none focus:border-amber-500"
+            className="w-full bg-[#111827] border border-slate-800 rounded-2xl pl-10 pr-4 py-2.5 sm:py-3 text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none focus:border-cyan-400"
           />
         </div>
 
@@ -145,10 +145,10 @@ export const PassportScreen: React.FC<PassportScreenProps> = ({
                 sounds.playPop();
                 setSelectedContinent(continent);
               }}
-              className={`px-3.5 py-2 rounded-xl font-bold whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-3.5 py-2 rounded-xl font-black whitespace-nowrap transition-colors cursor-pointer ${
                 selectedContinent === continent
-                  ? 'bg-amber-500 text-slate-950 shadow'
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
+                  ? 'bg-cyan-500 text-slate-950 shadow-md'
+                  : 'bg-[#111827] text-slate-400 hover:text-white'
               }`}
             >
               {continent}

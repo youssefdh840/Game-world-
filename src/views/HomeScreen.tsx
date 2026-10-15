@@ -43,11 +43,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {/* Left / Primary Column on Desktop: Traveler Hero + Play CTA + Quick Grid */}
         <div className="lg:col-span-7 space-y-5 sm:space-y-6">
           {/* Traveler Hero Profile Card */}
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-900 border border-indigo-500/30 p-5 sm:p-6 md:p-7 shadow-2xl">
-            {/* Background glow decoration */}
-            <div className="absolute -top-12 -right-12 w-44 h-44 bg-rose-500/15 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute -bottom-10 -left-10 w-44 h-44 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-
+          <div className="relative overflow-hidden rounded-3xl bg-[#111827] border border-cyan-500/20 p-5 sm:p-6 md:p-7 shadow-xl">
             <div className="relative z-10 flex items-center gap-3.5 sm:gap-4">
               {/* Avatar with flag badge */}
               <div className="relative shrink-0">
@@ -57,9 +53,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80'
                   }
                   alt={userProfile?.username || 'Avatar'}
-                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover ring-2 ring-indigo-500/40 shadow-lg bg-slate-800"
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover ring-2 ring-cyan-400/60 shadow-[0_0_14px_rgba(6,182,212,0.25)] bg-slate-900"
                 />
-                <span className="absolute -bottom-1.5 -right-1.5 text-lg sm:text-xl p-0.5 bg-slate-900 rounded-full shadow">
+                <span className="absolute -bottom-1.5 -right-1.5 text-lg sm:text-xl p-0.5 bg-[#0B0F19] rounded-full shadow border border-slate-800">
                   {userProfile?.countryFlag || '🌐'}
                 </span>
               </div>
@@ -67,8 +63,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               {/* User Identity & Meta */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-500 to-rose-500 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-0.5 rounded-lg shadow-sm shrink-0">
-                    <Zap className="w-3 h-3 fill-white" />
+                  <span className="inline-flex items-center gap-1 bg-amber-400 text-slate-950 font-black text-[10px] sm:text-xs px-2.5 py-0.5 rounded-md shadow-sm shrink-0">
+                    <Zap className="w-3 h-3 fill-slate-950" />
                     LVL {levelInfo.level}
                   </span>
 
@@ -78,9 +74,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         sounds.playPop();
                         onOpenAuth();
                       }}
-                      className="inline-flex items-center gap-1 text-[11px] bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold px-2.5 py-0.5 rounded-full shadow-md active:scale-95 transition-all cursor-pointer shrink-0"
+                      className="inline-flex items-center gap-1 text-[11px] bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black px-2.5 py-0.5 rounded-full shadow-sm active:scale-95 transition-all cursor-pointer shrink-0"
                     >
-                      <LogIn className="w-3 h-3 stroke-[2.5]" />
+                      <LogIn className="w-3 h-3" />
                       <span>Log In</span>
                     </button>
                   )}
@@ -90,7 +86,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   {userProfile?.username || 'Traveler'}
                 </h2>
 
-                <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-xs sm:text-sm text-indigo-300 font-medium mt-0.5">
+                <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-xs sm:text-sm text-slate-300 font-medium mt-0.5">
                   <span className="truncate">{userProfile?.countryName || 'Global Wanderer'}</span>
                   <span className="text-slate-600">•</span>
                   <span className="text-amber-400 font-bold whitespace-nowrap">
@@ -103,24 +99,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             {/* XP Progress Bar */}
             <div className="mt-5 pt-4 border-t border-slate-800/80">
               <div className="flex justify-between text-[11px] sm:text-xs font-bold text-slate-300 mb-2">
-                <span className="text-indigo-300">PROGRESSION</span>
-                <span className="text-slate-400 font-mono">
+                <span className="text-cyan-400 uppercase tracking-wider text-[10px]">EXP PROGRESSION</span>
+                <span className="text-slate-400 font-mono text-[11px]">
                   {levelInfo.xpInCurrentLevel} / {levelInfo.nextLevelThreshold - levelInfo.currentLevelBase} XP
                 </span>
               </div>
-              <div className="w-full h-3 sm:h-3.5 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700/50">
+              <div className="w-full h-3 sm:h-3.5 bg-[#0B0F19] rounded-full overflow-hidden p-0.5 border border-slate-800">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-amber-400 via-rose-500 to-indigo-500 transition-all duration-700 shadow-sm"
+                  className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 transition-all duration-700 shadow-[0_0_8px_rgba(6,182,212,0.4)]"
                   style={{ width: `${Math.max(5, levelInfo.progressPercent)}%` }}
                 />
               </div>
             </div>
 
             {/* Passport quick badge summary */}
-            <div className="mt-4 flex items-center justify-between text-xs sm:text-sm text-slate-300 bg-slate-950/40 px-4 py-2.5 rounded-2xl border border-slate-800/50">
+            <div className="mt-4 flex items-center justify-between text-xs sm:text-sm text-slate-300 bg-[#0B0F19]/80 px-4 py-2.5 rounded-2xl border border-slate-800/80">
               <div className="flex items-center gap-2">
                 <Globe className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span className="font-semibold">
+                <span className="font-semibold text-xs sm:text-sm">
                   <span className="text-emerald-400 font-bold">{discoveredCount}</span> / 195 Countries Discovered
                 </span>
               </div>
@@ -129,7 +125,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   sounds.playPop();
                   onNavigateTab('passport');
                 }}
-                className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer"
+                className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
               >
                 <span>View</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -144,29 +140,29 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 sounds.playPop();
                 onStartMatchmaking();
               }}
-              className="w-full relative group overflow-hidden bg-gradient-to-r from-amber-500 via-rose-600 to-indigo-600 p-0.5 rounded-3xl shadow-xl shadow-rose-600/25 active:scale-98 transition-transform cursor-pointer"
+              className="w-full relative group overflow-hidden bg-gradient-to-r from-cyan-500 via-teal-400 to-emerald-400 hover:from-cyan-400 hover:to-emerald-300 p-[2px] rounded-3xl shadow-[0_8px_24px_rgba(6,182,212,0.25)] active:translate-y-0.5 transition-all cursor-pointer"
             >
-              <div className="bg-gradient-to-r from-amber-500 via-rose-600 to-indigo-600 p-5 sm:p-6 rounded-[22px] flex items-center justify-between text-white">
+              <div className="bg-[#0E1526] group-hover:bg-[#121B30] p-5 sm:p-6 rounded-[22px] flex items-center justify-between text-white transition-colors">
                 <div className="flex items-center gap-4 text-left">
-                  <div className="w-13 h-13 sm:w-15 sm:h-15 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-3xl sm:text-4xl shadow-inner group-hover:scale-110 transition-transform shrink-0">
+                  <div className="w-13 h-13 sm:w-15 sm:h-15 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-3xl sm:text-4xl shadow-inner group-hover:scale-105 transition-transform shrink-0">
                     🎮
                   </div>
                   <div>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest bg-white/20 px-2.5 py-0.5 rounded-full">
-                        MULTIPLAYER
+                      <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider bg-cyan-500/15 text-cyan-300 px-2.5 py-0.5 rounded-md border border-cyan-500/30">
+                        MULTIPLAYER ARENA
                       </span>
                       <span className="flex h-2 w-2 relative">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                       </span>
                     </div>
                     <h3 className="text-2xl sm:text-3xl font-black tracking-tight mt-0.5">PLAY NOW</h3>
-                    <p className="text-xs sm:text-sm text-rose-100 font-medium">Match with players worldwide!</p>
+                    <p className="text-xs sm:text-sm text-slate-300 font-medium">Match with players worldwide in real-time!</p>
                   </div>
                 </div>
-                <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center text-white font-bold group-hover:translate-x-1 transition-transform shrink-0">
-                  <ArrowRight className="w-5 h-5" />
+                <div className="w-11 h-11 rounded-xl bg-cyan-500 text-slate-950 flex items-center justify-center group-hover:translate-x-1 transition-transform shrink-0 shadow-sm">
+                  <ArrowRight className="w-5 h-5 stroke-[2.5]" />
                 </div>
               </div>
             </button>
@@ -179,9 +175,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   sounds.playPop();
                   onNavigateTab('passport');
                 }}
-                className="p-4 sm:p-5 rounded-3xl bg-slate-900 border border-slate-800 hover:border-indigo-500/50 flex flex-col items-start gap-3 shadow-lg active:scale-98 transition-all group text-left cursor-pointer"
+                className="p-4 sm:p-5 rounded-3xl bg-[#111827] border border-slate-800 hover:border-cyan-500/40 flex flex-col items-start gap-3 shadow-lg active:scale-98 transition-all group text-left cursor-pointer"
               >
-                <div className="w-11 h-11 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xl sm:text-2xl group-hover:scale-110 transition-transform">
+                <div className="w-11 h-11 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center text-xl sm:text-2xl group-hover:scale-105 transition-transform">
                   🛂
                 </div>
                 <div>
@@ -196,14 +192,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   sounds.playPop();
                   onNavigateTab('play');
                 }}
-                className="p-4 sm:p-5 rounded-3xl bg-slate-900 border border-slate-800 hover:border-rose-500/50 flex flex-col items-start gap-3 shadow-lg active:scale-98 transition-all group text-left cursor-pointer"
+                className="p-4 sm:p-5 rounded-3xl bg-[#111827] border border-slate-800 hover:border-emerald-500/40 flex flex-col items-start gap-3 shadow-lg active:scale-98 transition-all group text-left cursor-pointer"
               >
-                <div className="w-11 h-11 rounded-2xl bg-rose-500/10 text-rose-400 flex items-center justify-center text-xl sm:text-2xl group-hover:scale-110 transition-transform">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl sm:text-2xl group-hover:scale-105 transition-transform">
                   🎯
                 </div>
                 <div>
-                  <h4 className="text-sm sm:text-base font-extrabold text-white">Cultural Quiz</h4>
-                  <p className="text-xs text-slate-400 mt-0.5">Flags, food, monuments &amp; facts</p>
+                  <h4 className="text-sm sm:text-base font-extrabold text-white">Game Modes</h4>
+                  <p className="text-xs text-slate-400 mt-0.5">Quiz, Scramble, Numbers &amp; Match</p>
                 </div>
               </button>
             </div>
@@ -213,7 +209,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {/* Right / Secondary Column on Desktop: Daily Cultural Challenge + Leaderboard Podium */}
         <div className="lg:col-span-5 space-y-5 sm:space-y-6">
           {/* Daily Cultural Challenge Card */}
-          <div className="rounded-3xl bg-gradient-to-br from-amber-500/15 via-slate-900 to-slate-900 border border-amber-500/30 p-5 sm:p-6 shadow-xl">
+          <div className="rounded-3xl bg-[#111827] border border-amber-500/25 p-5 sm:p-6 shadow-xl">
             <div className="flex items-center justify-between gap-2 mb-2.5">
               <div className="flex items-center gap-2.5">
                 <span className="text-2xl">🇲🇽</span>
@@ -230,12 +226,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <span>Completed</span>
                 </span>
               ) : (
-                <span className="text-xs font-extrabold text-amber-300 bg-amber-500/20 px-2.5 py-1 rounded-lg border border-amber-500/30 shrink-0">
+                <span className="text-xs font-black text-slate-950 bg-amber-400 px-2.5 py-1 rounded-md shrink-0">
                   +300 XP
                 </span>
               )}
             </div>
-            <p className="text-xs sm:text-sm text-slate-400 mb-4 leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-300 mb-4 leading-relaxed">
               {dailyCompletedToday
                 ? "You have completed today's Daily Quest attempt. Come back tomorrow for a brand new destination!"
                 : 'Answer 5 cultural questions about Mexico and earn gold coins + unlock the Aztec Luminary badge!'}
@@ -247,10 +243,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 sounds.playPop();
                 onOpenDailyChallenge();
               }}
-              className={`w-full py-3 rounded-xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md transition-all ${
+              className={`w-full py-3 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md transition-all ${
                 dailyCompletedToday
-                  ? 'bg-slate-800 border border-slate-700 text-emerald-400 cursor-not-allowed'
-                  : 'bg-amber-500 hover:bg-amber-400 text-slate-950 active:scale-98 cursor-pointer'
+                  ? 'bg-[#0B0F19] border border-slate-800 text-emerald-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 shadow-[0_4px_12px_rgba(245,158,11,0.25)] active:translate-y-0.5 cursor-pointer'
               }`}
             >
               {dailyCompletedToday ? (
@@ -261,17 +257,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               ) : (
                 <>
                   <span>Start Daily Quest</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-4 h-4 stroke-[2.5]" />
                 </>
               )}
             </button>
           </div>
 
           {/* Leaderboard Podium Preview */}
-          <div className="rounded-3xl bg-slate-900 border border-slate-800 p-5 sm:p-6 shadow-xl">
+          <div className="rounded-3xl bg-[#111827] border border-slate-800 p-5 sm:p-6 shadow-xl">
             <div className="flex items-center justify-between mb-3.5">
               <div className="flex items-center gap-2">
-                <Trophy className="w-4 h-4 text-yellow-400" />
+                <Trophy className="w-4 h-4 text-amber-400" />
                 <h4 className="text-sm sm:text-base font-extrabold text-white">Global Champions</h4>
               </div>
               <button
@@ -279,7 +275,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   sounds.playPop();
                   onNavigateTab('leaderboard');
                 }}
-                className="text-xs font-bold text-indigo-400 hover:text-indigo-300 cursor-pointer"
+                className="text-xs font-bold text-cyan-400 hover:text-cyan-300 cursor-pointer"
               >
                 See Top 50
               </button>
@@ -294,7 +290,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               ].map((champ) => (
                 <div
                   key={champ.name}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-slate-800/60 border border-slate-700/40 text-xs sm:text-sm"
+                  className="flex items-center justify-between p-3 rounded-2xl bg-[#0B0F19]/80 border border-slate-800/80 text-xs sm:text-sm"
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-base">{champ.trophy}</span>
@@ -304,7 +300,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       <span className="text-[11px] text-slate-400 ml-1.5">({champ.country})</span>
                     </div>
                   </div>
-                  <span className="font-mono font-bold text-amber-300">{champ.xp.toLocaleString()} XP</span>
+                  <span className="font-mono font-bold text-cyan-400">{champ.xp.toLocaleString()} XP</span>
                 </div>
               ))}
             </div>

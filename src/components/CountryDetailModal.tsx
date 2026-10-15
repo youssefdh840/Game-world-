@@ -150,11 +150,11 @@ export const CountryDetailModal: React.FC<CountryDetailModalProps> = ({
           </div>
 
           {/* Explorer Badge Title */}
-          <div className="bg-gradient-to-r from-indigo-950 to-slate-900 border border-indigo-500/30 rounded-2xl p-3.5 sm:p-4 flex items-center justify-between">
+          <div className="bg-slate-900 border border-slate-700/70 rounded-2xl p-3.5 sm:p-4 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <Award className="w-5 h-5 text-amber-400 shrink-0" />
               <div>
-                <span className="text-[10px] sm:text-xs text-indigo-300 font-bold block uppercase">Country Explorer Badge</span>
+                <span className="text-[10px] sm:text-xs text-amber-400 font-bold block uppercase">Country Explorer Badge</span>
                 <span className="font-extrabold text-white">{country.badgeTitle}</span>
               </div>
             </div>
@@ -170,9 +170,9 @@ export const CountryDetailModal: React.FC<CountryDetailModalProps> = ({
               onClose();
               if (onPlayWithCountry) onPlayWithCountry(country.code);
             }}
-            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-rose-600 to-amber-600 hover:opacity-95 text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20 active:scale-98 transition-all cursor-pointer"
+            className="w-full py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-98 transition-all cursor-pointer"
           >
-            <Gamepad2 className="w-4 h-4" />
+            <Gamepad2 className="w-4 h-4 stroke-[2.5]" />
             <span>Play Game Featuring {country.name}</span>
           </button>
         </div>

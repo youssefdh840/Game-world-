@@ -2,6 +2,7 @@ export type GameCategory =
   | 'cultural_quiz'
   | 'word_scramble'
   | 'guess_number'
+  | 'memory_match'
   | 'country_quiz'
   | 'guess_word'
   | 'mystery_food'

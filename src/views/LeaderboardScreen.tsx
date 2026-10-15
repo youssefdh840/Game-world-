@@ -50,25 +50,25 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
     <div className="max-w-3xl mx-auto space-y-6 sm:space-y-7 pb-8 animate-fade-in">
       {/* Header */}
       <div className="text-center pt-1">
-        <div className="w-15 h-15 sm:w-16 sm:h-16 mx-auto rounded-3xl bg-gradient-to-tr from-amber-400 via-yellow-500 to-amber-600 flex items-center justify-center text-3xl shadow-xl shadow-yellow-500/20 mb-2.5">
+        <div className="w-15 h-15 sm:w-16 sm:h-16 mx-auto rounded-3xl bg-amber-400 text-slate-950 flex items-center justify-center text-3xl shadow-lg shadow-amber-400/20 mb-2.5">
           🏆
         </div>
         <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">World Leaderboard</h2>
-        <p className="text-xs sm:text-sm text-slate-400 mt-1">
+        <p className="text-xs sm:text-sm text-slate-300 mt-1">
           Top cultural champions and globetrotters worldwide
         </p>
       </div>
 
       {/* Tabs Switcher: Global, Weekly, Country */}
-      <div className="flex bg-slate-900 border border-slate-800 p-1.5 rounded-2xl text-xs sm:text-sm font-bold">
+      <div className="flex bg-[#0B0F19] p-1.5 rounded-2xl text-xs sm:text-sm font-bold border border-slate-800">
         <button
           onClick={() => {
             sounds.playPop();
             setBoardType('global');
           }}
-          className={`flex-1 py-2.5 rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 py-2.5 rounded-xl font-black transition-all cursor-pointer ${
             boardType === 'global'
-              ? 'bg-indigo-600 text-white shadow-md'
+              ? 'bg-cyan-500 text-slate-950 shadow-md'
               : 'text-slate-400 hover:text-white'
           }`}
         >
@@ -79,9 +79,9 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
             sounds.playPop();
             setBoardType('weekly');
           }}
-          className={`flex-1 py-2.5 rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 py-2.5 rounded-xl font-black transition-all cursor-pointer ${
             boardType === 'weekly'
-              ? 'bg-indigo-600 text-white shadow-md'
+              ? 'bg-cyan-500 text-slate-950 shadow-md'
               : 'text-slate-400 hover:text-white'
           }`}
         >
@@ -92,9 +92,9 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
             sounds.playPop();
             setBoardType('country');
           }}
-          className={`flex-1 py-2.5 rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 py-2.5 rounded-xl font-black transition-all cursor-pointer ${
             boardType === 'country'
-              ? 'bg-indigo-600 text-white shadow-md'
+              ? 'bg-cyan-500 text-slate-950 shadow-md'
               : 'text-slate-400 hover:text-white'
           }`}
         >
@@ -184,8 +184,8 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
               key={p.uid}
               className={`p-3.5 sm:p-4 rounded-2xl border flex items-center justify-between text-xs sm:text-sm transition-colors ${
                 isCurrentUser
-                  ? 'bg-indigo-950/60 border-indigo-500/60 ring-1 ring-indigo-500'
-                  : 'bg-slate-900 border-slate-800'
+                  ? 'bg-[#0E1E30] border-cyan-500/60 ring-1 ring-cyan-500/50'
+                  : 'bg-[#111827] border-slate-800'
               }`}
             >
               <div className="flex items-center gap-3.5">
@@ -202,7 +202,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
                     <span className="font-black text-white">{p.username}</span>
                     <span className="text-xs sm:text-sm">{p.countryFlag}</span>
                     {isCurrentUser && (
-                      <span className="text-[10px] bg-indigo-500 text-white px-2 py-0.5 rounded font-bold">
+                      <span className="text-[10px] bg-cyan-500 text-slate-950 px-2 py-0.5 rounded font-black">
                         YOU
                       </span>
                     )}
@@ -214,7 +214,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ currentUse
               </div>
 
               <div className="text-right">
-                <span className="font-mono font-bold text-amber-300 block">
+                <span className="font-mono font-bold text-cyan-400 block">
                   {p.xp.toLocaleString()} XP
                 </span>
                 <span className="text-[11px] text-slate-500">

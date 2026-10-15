@@ -148,7 +148,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 setMode('signup');
                 setError(null);
               }}
-              className={`flex-1 py-2 rounded-xl transition-all ${
+              className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
                 mode === 'signup' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -160,7 +160,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 setMode('login');
                 setError(null);
               }}
-              className={`flex-1 py-2 rounded-xl transition-all ${
+              className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
                 mode === 'login' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -172,7 +172,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 setMode('guest');
                 setError(null);
               }}
-              className={`flex-1 py-2 rounded-xl transition-all ${
+              className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
                 mode === 'guest' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
