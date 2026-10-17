@@ -717,6 +717,30 @@ export async function fetchDynamicGameQuestions(
     });
   }
 
+  // Dedicated Memory Match Mode: 1 complete 4x4 card grid featuring 8 pairs
+  if (category === 'memory_match') {
+    const timestampSeed = Date.now().toString(36);
+    const country = countryCode ? getCountryByCode(countryCode) : null;
+    const resolvedCountry = country || COUNTRIES[Math.floor(Math.random() * COUNTRIES.length)];
+
+    return [
+      {
+        id: `memory_match_${timestampSeed}`,
+        category: 'memory_match',
+        countryCode: resolvedCountry.code,
+        countryName: resolvedCountry.name,
+        difficulty: 'medium',
+        prompt: 'Flip and match all 8 cultural landmark pairs in the 4x4 grid before time runs out! Consecutive combos boost your score.',
+        options: ['8 Pairs', '16 Cards'],
+        correctAnswer: '8',
+        explanation: 'Memory match tests recall and recognition of global monuments, heritage treasures, and world flags!',
+        active: true,
+        subCategory: 'Landmarks',
+        source: 'curated',
+      },
+    ];
+  }
+
   const isUnifiedQuiz = isUnifiedCulturalQuizMode(category);
 
   // 1. Build unified dataset including curated questions and picture-based flag questions

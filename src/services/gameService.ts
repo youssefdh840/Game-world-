@@ -22,6 +22,14 @@ import {
   scrambleWordDeterministic,
   QuestionFilterOptions,
 } from './questionService';
+import {
+  MEMORY_MATCH_DURATION_SECONDS,
+  MEMORY_MATCH_DURATION_MS,
+  MEMORY_MATCH_TOTAL_PAIRS,
+  calculateMemoryMatchPoints,
+  generateMemoryMatchDeck,
+  type MemoryCard,
+} from './memoryMatchData';
 
 export {
   fetchDynamicGameQuestions,
@@ -31,6 +39,12 @@ export {
   shuffleArraySeeded,
   scrambleWordDeterministic,
   type QuestionFilterOptions,
+  MEMORY_MATCH_DURATION_SECONDS,
+  MEMORY_MATCH_DURATION_MS,
+  MEMORY_MATCH_TOTAL_PAIRS,
+  calculateMemoryMatchPoints,
+  generateMemoryMatchDeck,
+  type MemoryCard,
 };
 
 function sanitizeUpdates<T extends Record<string, unknown>>(updates: T): T {
@@ -92,7 +106,36 @@ export const GUESS_NUMBER_MAX_ATTEMPTS = 6;
 export function getRoundDurationSeconds(gameMode?: string): number {
   if (gameMode === 'word_scramble') return WORD_SCRAMBLE_DURATION_SECONDS;
   if (gameMode === 'guess_number') return GUESS_NUMBER_DURATION_SECONDS;
+  if (gameMode === 'memory_match') return MEMORY_MATCH_DURATION_SECONDS;
   return QUESTION_DURATION_SECONDS;
+}
+
+export async function syncMemoryMatchScore(
+  roomId: string,
+  userId: string,
+  currentScore: number,
+  isHost: boolean,
+  isFinished: boolean = false
+) {
+  if (!roomId || roomId.startsWith('room_bot_')) return;
+  const updates: Record<string, unknown> = {};
+  if (isHost) {
+    updates.hostScore = currentScore;
+    if (isFinished) {
+      updates.hostAnswer = `matched_${currentScore}`;
+    }
+  } else {
+    updates.guestScore = currentScore;
+    if (isFinished) {
+      updates.guestAnswer = `matched_${currentScore}`;
+    }
+  }
+  updates.updatedAt = new Date().toISOString();
+  try {
+    await updateDoc(doc(db, 'gameRooms', roomId), sanitizeUpdates(updates));
+  } catch (error) {
+    console.warn('syncMemoryMatchScore notice:', error);
+  }
 }
 
 export function calculateWordScramblePoints(remainingSeconds: number): number {

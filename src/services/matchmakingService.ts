@@ -130,6 +130,7 @@ export async function joinMatchmakingQueue(
     const normalizeMode = (mode?: string) => {
       if (mode === 'word_scramble') return 'word_scramble';
       if (mode === 'guess_number') return 'guess_number';
+      if (mode === 'memory_match') return 'memory_match';
       return 'cultural_quiz';
     };
     const requestedModeGroup = normalizeMode(preferredCategory);
@@ -181,8 +182,8 @@ export async function joinMatchmakingQueue(
   // 2. No open waiting room: Player 1 creates a new room document in Firestore with status 'waiting'
   const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-  // Fetch diverse questions for this match (3 rounds for Guess the Number, 5 rounds otherwise)
-  const roundCount = preferredCategory === 'guess_number' ? 3 : 5;
+  // Fetch questions for this match (1 round for Memory Match, 3 rounds for Guess the Number, 5 rounds otherwise)
+  const roundCount = preferredCategory === 'memory_match' ? 1 : preferredCategory === 'guess_number' ? 3 : 5;
   const questions = await fetchDynamicGameQuestions({
     count: roundCount,
     category: preferredCategory,
@@ -315,7 +316,7 @@ export async function createPrivateDuelRoom(
   const roomCode = generateRoomCode();
   const roomId = `room_code_${roomCode}`;
 
-  const roundCount = preferredCategory === 'guess_number' ? 3 : 5;
+  const roundCount = preferredCategory === 'memory_match' ? 1 : preferredCategory === 'guess_number' ? 3 : 5;
   const questions = await fetchDynamicGameQuestions({
     count: roundCount,
     category: preferredCategory,

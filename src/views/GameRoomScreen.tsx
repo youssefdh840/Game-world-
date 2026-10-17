@@ -22,6 +22,13 @@ import {
   GUESS_NUMBER_MAX_ATTEMPTS,
   calculateWordScramblePoints,
   calculateGuessNumberPoints,
+  MEMORY_MATCH_TOTAL_PAIRS,
+  MEMORY_MATCH_DURATION_SECONDS,
+  MEMORY_MATCH_DURATION_MS,
+  calculateMemoryMatchPoints,
+  generateMemoryMatchDeck,
+  syncMemoryMatchScore,
+  type MemoryCard,
 } from '../services/gameService';
 import { awardGameResults } from '../services/userService';
 import { auth } from '../services/firebase';
@@ -45,6 +52,7 @@ import {
   MapPin,
   Flame,
   LogOut,
+  Check,
 } from 'lucide-react';
 
 interface GameRoomScreenProps {
@@ -62,6 +70,10 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 }) => {
   const effectiveUid = auth.currentUser?.uid || user.uid;
   const [room, setRoom] = useState<GameRoom>(initialRoom);
+  const isMemoryMatch =
+    room.gameMode === 'memory_match' ||
+    initialRoom.gameMode === 'memory_match' ||
+    room.currentQuestion?.category === 'memory_match';
   const isWordScramble =
     room.gameMode === 'word_scramble' ||
     initialRoom.gameMode === 'word_scramble' ||
@@ -70,12 +82,16 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     room.gameMode === 'guess_number' ||
     initialRoom.gameMode === 'guess_number' ||
     room.currentQuestion?.category === 'guess_number';
-  const roundDurationSeconds = isWordScramble
+  const roundDurationSeconds = isMemoryMatch
+    ? MEMORY_MATCH_DURATION_SECONDS
+    : isWordScramble
     ? WORD_SCRAMBLE_DURATION_SECONDS
     : isGuessNumber
     ? GUESS_NUMBER_DURATION_SECONDS
     : QUESTION_DURATION_SECONDS;
-  const roundDurationMs = isWordScramble
+  const roundDurationMs = isMemoryMatch
+    ? MEMORY_MATCH_DURATION_MS
+    : isWordScramble
     ? WORD_SCRAMBLE_DURATION_MS
     : isGuessNumber
     ? GUESS_NUMBER_DURATION_MS
@@ -107,6 +123,18 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     Array<{ value: number; feedback: 'higher' | 'lower' | 'correct' }>
   >([]);
   const [numberError, setNumberError] = useState<string | null>(null);
+
+  // Memory Match specific interactive state
+  const [flippedCardIndices, setFlippedCardIndices] = useState<number[]>([]);
+  const [matchedPairIds, setMatchedPairIds] = useState<string[]>([]);
+  const [movesCount, setMovesCount] = useState<number>(0);
+  const [incorrectMoves, setIncorrectMoves] = useState<number>(0);
+  const [comboStreak, setComboStreak] = useState<number>(0);
+  const [comboBonusTotal, setComboBonusTotal] = useState<number>(0);
+  const [isCheckingPair, setIsCheckingPair] = useState<boolean>(false);
+  const [memoryScore, setMemoryScore] = useState<number>(0);
+  const [lastMatchedCard, setLastMatchedCard] = useState<MemoryCard | null>(null);
+  const [mismatchedIndices, setMismatchedIndices] = useState<number[]>([]);
 
   // End of match awards
   const [awardedResults, setAwardedResults] = useState<{
@@ -157,6 +185,14 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       options: shuffleArraySeeded(rawCurrentQ.options, seed),
     };
   }, [rawCurrentQ?.id, room.id, room.currentRound, room.gameMode]);
+
+  // Memoized deterministic 4x4 Memory Match deck (8 pairs)
+  // Both players get the exact identical cards in the exact same positions
+  const memoryDeck: MemoryCard[] = React.useMemo(() => {
+    if (!isMemoryMatch) return [];
+    const seed = `${room.id || 'room'}_memory_seed_${room.currentRound || 1}`;
+    return generateMemoryMatchDeck(seed, room.targetCountryCode);
+  }, [isMemoryMatch, room.id, room.currentRound, room.targetCountryCode]);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const roundStartTimeRef = useRef<number>(Date.now());
@@ -334,6 +370,16 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     setNumberInput('');
     setNumberGuesses([]);
     setNumberError(null);
+    setFlippedCardIndices([]);
+    setMatchedPairIds([]);
+    setMovesCount(0);
+    setIncorrectMoves(0);
+    setComboStreak(0);
+    setComboBonusTotal(0);
+    setIsCheckingPair(false);
+    setMemoryScore(0);
+    setLastMatchedCard(null);
+    setMismatchedIndices([]);
     setLastEarnedPoints(0);
     isAdvancingRoundRef.current = false;
     activeRoundRef.current = room.currentRound;
@@ -450,6 +496,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     if (e) e.preventDefault();
     if (hasAnswered || showExplanation || isAdvancingRoundRef.current || !currentQ) return;
 
+    const isHostPlayer = isHostRef.current;
+    const activeUid = auth.currentUser?.uid || user.uid;
+
     const raw = numberInput.trim();
     const num = parseInt(raw, 10);
     if (isNaN(num) || num < 1 || num > 100) {
@@ -491,7 +540,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       const pointsEarned = calculateGuessNumberPoints(nextAttemptsUsed, remainingSec);
       setLastEarnedPoints(pointsEarned);
 
-      const isHostPlayer = isHostRef.current;
       setRoom((prev) => {
         const copy = { ...prev };
         if (isHostPlayer) {
@@ -506,7 +554,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         return copy;
       });
 
-      const activeUid = auth.currentUser?.uid || user.uid;
       submitPlayerAnswer(
         room.id,
         activeUid,
@@ -533,7 +580,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       setLastEarnedPoints(0);
 
       const timeTaken = Math.max(0, Date.now() - roundStartTimeRef.current);
-      const isHostPlayer = isHostRef.current;
       setRoom((prev) => {
         const copy = { ...prev };
         if (isHostPlayer) {
@@ -546,7 +592,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         return copy;
       });
 
-      const activeUid = auth.currentUser?.uid || user.uid;
       submitPlayerAnswer(
         room.id,
         activeUid,
@@ -561,6 +606,143 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     }
   };
 
+  // Memory Match: Flip and match card pairs in the 4x4 grid
+  const handleMemoryCardClick = (cardIndex: number) => {
+    if (
+      !isMemoryMatch ||
+      room.status === 'finished' ||
+      hasAnswered ||
+      showExplanation ||
+      isAdvancingRoundRef.current ||
+      isCheckingPair
+    ) {
+      return;
+    }
+
+    const card = memoryDeck[cardIndex];
+    if (!card) return;
+
+    // Ignore if already matched or already flipped in current check
+    if (matchedPairIds.includes(card.pairId) || flippedCardIndices.includes(cardIndex)) {
+      return;
+    }
+
+    sounds.playPop();
+
+    // 1st card flipped
+    if (flippedCardIndices.length === 0) {
+      setFlippedCardIndices([cardIndex]);
+      setMismatchedIndices([]);
+      return;
+    }
+
+    // 2nd card flipped
+    if (flippedCardIndices.length === 1) {
+      const firstIndex = flippedCardIndices[0];
+      const firstCard = memoryDeck[firstIndex];
+      const newFlipped = [firstIndex, cardIndex];
+      setFlippedCardIndices(newFlipped);
+
+      const nextMovesCount = movesCount + 1;
+      setMovesCount(nextMovesCount);
+
+      if (firstCard.pairId === card.pairId) {
+        // MATCH!
+        sounds.playCorrect();
+        const nextMatched = [...matchedPairIds, card.pairId];
+        setMatchedPairIds(nextMatched);
+        setLastMatchedCard(card);
+        setMismatchedIndices([]);
+
+        const nextCombo = comboStreak + 1;
+        setComboStreak(nextCombo);
+        const comboAdd = (nextCombo - 1) * 25; // Bonus for consecutive streaks
+        const nextComboBonusTotal = comboBonusTotal + comboAdd;
+        setComboBonusTotal(nextComboBonusTotal);
+
+        const isAllMatched = nextMatched.length >= MEMORY_MATCH_TOTAL_PAIRS;
+        const currentElapsedSec = Math.max(0, Math.floor((Date.now() - roundStartTimeRef.current) / 1000));
+        const remainingSec = Math.max(0, MEMORY_MATCH_DURATION_SECONDS - currentElapsedSec);
+
+        const newScore = calculateMemoryMatchPoints(
+          nextMatched.length,
+          nextMovesCount,
+          remainingSec,
+          MEMORY_MATCH_TOTAL_PAIRS,
+          nextComboBonusTotal
+        );
+        setMemoryScore(newScore);
+
+        // Optimistically update player's score in local room state
+        const isHostPlayer = isHostRef.current;
+        setRoom((prev) => {
+          const copy = { ...prev };
+          if (isHostPlayer) {
+            copy.hostScore = newScore;
+            if (isAllMatched) copy.hostAnswer = `matched_all_${newScore}`;
+          } else {
+            copy.guestScore = newScore;
+            if (isAllMatched) copy.guestAnswer = `matched_all_${newScore}`;
+          }
+          return copy;
+        });
+
+        // Sync score to Firestore in real-time so opponent sees live score updates
+        const activeUid = auth.currentUser?.uid || user.uid;
+        syncMemoryMatchScore(room.id, activeUid, newScore, isHostPlayer, isAllMatched);
+
+        // Reset flipped indices for next turn
+        setFlippedCardIndices([]);
+
+        if (isAllMatched) {
+          // All pairs matched! Trigger victory celebration
+          confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+          setHasAnswered(true);
+          setSelectedAnswer('matched_all');
+          setLastEarnedPoints(newScore);
+          triggerRoundAdvance('memory_all_matched');
+        }
+      } else {
+        // MISMATCH!
+        sounds.playWrong();
+        setComboStreak(0);
+        const nextIncorrectMoves = incorrectMoves + 1;
+        setIncorrectMoves(nextIncorrectMoves);
+        setMismatchedIndices(newFlipped);
+        setIsCheckingPair(true);
+
+        const currentElapsedSec = Math.max(0, Math.floor((Date.now() - roundStartTimeRef.current) / 1000));
+        const remainingSec = Math.max(0, MEMORY_MATCH_DURATION_SECONDS - currentElapsedSec);
+        const newScore = calculateMemoryMatchPoints(
+          matchedPairIds.length,
+          nextMovesCount,
+          remainingSec,
+          MEMORY_MATCH_TOTAL_PAIRS,
+          comboBonusTotal
+        );
+        setMemoryScore(newScore);
+
+        const isHostPlayer = isHostRef.current;
+        setRoom((prev) => {
+          const copy = { ...prev };
+          if (isHostPlayer) {
+            copy.hostScore = newScore;
+          } else {
+            copy.guestScore = newScore;
+          }
+          return copy;
+        });
+
+        // Automatically flip both cards face-down after 1 second delay
+        setTimeout(() => {
+          setFlippedCardIndices([]);
+          setMismatchedIndices([]);
+          setIsCheckingPair(false);
+        }, 1000);
+      }
+    }
+  };
+
   const handleTimeExpired = () => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -568,6 +750,39 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     }
 
     const currentRoom = roomRef.current;
+    const isHostPlayer = isHostRef.current;
+    const activeUid = auth.currentUser?.uid || user.uid;
+
+    if (isMemoryMatch) {
+      const finalScore = calculateMemoryMatchPoints(
+        matchedPairIds.length,
+        movesCount,
+        0,
+        MEMORY_MATCH_TOTAL_PAIRS,
+        comboBonusTotal
+      );
+      setMemoryScore(finalScore);
+      setHasAnswered(true);
+      setSelectedAnswer(`time_expired_${finalScore}`);
+      setLastEarnedPoints(finalScore);
+
+      setRoom((prev) => {
+        const copy = { ...prev };
+        if (isHostPlayer) {
+          copy.hostAnswer = `time_expired_${finalScore}`;
+          copy.hostScore = finalScore;
+        } else {
+          copy.guestAnswer = `time_expired_${finalScore}`;
+          copy.guestScore = finalScore;
+        }
+        return copy;
+      });
+
+      syncMemoryMatchScore(currentRoom.id, activeUid, finalScore, isHostPlayer, true);
+      triggerRoundAdvance('time_expired');
+      return;
+    }
+
     const fallbackAns = '__TIME_EXPIRED__';
 
     setHasAnswered(true);
@@ -580,8 +795,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       return prev;
     });
 
-    const isHostPlayer = isHostRef.current;
-    const activeUid = auth.currentUser?.uid || user.uid;
     if (isHostPlayer && !currentRoom.hostAnswer) {
       submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, roundDurationMs, false, currentRoom, 0);
     } else if (!isHostPlayer && !currentRoom.guestAnswer) {
@@ -789,14 +1002,16 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       ? forfeitedById !== activeUid && forfeitedById !== user.uid
       : myScore > opponentScore;
 
-    const isScrambleOrNumberMatch =
+    const isSpeedDuel =
       latestRoom.gameMode === 'word_scramble' ||
       initialRoom.gameMode === 'word_scramble' ||
       latestRoom.gameMode === 'guess_number' ||
-      initialRoom.gameMode === 'guess_number';
+      initialRoom.gameMode === 'guess_number' ||
+      latestRoom.gameMode === 'memory_match' ||
+      initialRoom.gameMode === 'memory_match';
 
-    // Word Scramble & Guess the Number: Winner gains +180 XP, Runner-up gets participation +40 XP
-    const xpReward = isScrambleOrNumberMatch
+    // Word Scramble, Guess the Number & Memory Match: Winner gains +180 XP, Runner-up gets participation +40 XP
+    const xpReward = isSpeedDuel
       ? isWinner
         ? 180
         : 40
@@ -815,7 +1030,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       isWinner,
       xpReward,
       coinsReward,
-      isScrambleOrNumberMatch ? (isWinner ? opponentCountryCode : undefined) : opponentCountryCode,
+      isSpeedDuel ? (isWinner ? opponentCountryCode : undefined) : opponentCountryCode,
       opponentUsername,
       opponentAvatar
     );
@@ -905,7 +1120,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           </div>
 
           <span className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-amber-400">
-            {isGuessNumber
+            {isMemoryMatch
+              ? 'MEMORY MATCH • 4X4 PAIR DUEL SUMMARY'
+              : isGuessNumber
               ? 'GUESS THE NUMBER • 3 ROUNDS SUMMARY'
               : isWordScramble
               ? 'WORD SCRAMBLE • MATCH SUMMARY'
@@ -928,7 +1145,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                 ? `${opponentName} left the match. Victory has been awarded to you!`
                 : 'You surrendered the duel.'
               : isWinner
-              ? `You outscored ${opponentName} across ${room.totalRounds || (isGuessNumber ? 3 : 5)} rounds!`
+              ? isMemoryMatch
+                ? `You outmatched ${opponentName} with high combo precision and speed!`
+                : `You outscored ${opponentName} across ${room.totalRounds || (isGuessNumber ? 3 : 5)} rounds!`
               : isTie
               ? 'An evenly matched clash of world explorers!'
               : `Good game! ${opponentName} claimed the crown this time.`}
@@ -1170,6 +1389,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                   if (currentQ.category === 'mystery_food' || currentQ.subCategory === 'Food') {
                     return 'Cultural Quiz • Food';
                   }
+                  if (isMemoryMatch) {
+                    return 'Memory Match • Global Landmarks';
+                  }
                   if (currentQ.category === 'music_culture' || currentQ.subCategory === 'Music') {
                     return 'Cultural Quiz • Music';
                   }
@@ -1184,7 +1406,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
               </span>
               <span className="text-xs sm:text-sm text-slate-300 font-bold flex items-center gap-1.5">
                 <span>
-                  {isGuessNumber
+                  {isMemoryMatch
+                    ? '8 World Pairs'
+                    : isGuessNumber
                     ? 'Range: 1–100'
                     : !showExplanation &&
                       !hasAnswered &&
@@ -1198,7 +1422,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                     : currentQ.countryName}
                 </span>
                 <span>
-                  {isGuessNumber
+                  {isMemoryMatch
+                    ? '🃏'
+                    : isGuessNumber
                     ? '🔢'
                     : isWordScramble
                     ? '🔤'
@@ -1210,7 +1436,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
             </div>
 
             {/* Question Prompt Card */}
-            <div className="bg-slate-800/80 border border-slate-700/60 rounded-3xl p-5 sm:p-7 md:p-8 shadow-xl text-center relative overflow-hidden space-y-4">
+            <div className="bg-[#0E1526] border border-cyan-500/20 rounded-3xl p-5 sm:p-7 md:p-8 shadow-xl text-center relative overflow-hidden space-y-4">
               {currentQ.imageUrl && (
                 <div className="flex justify-center">
                   <img
@@ -1218,6 +1444,25 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                     alt="Cultural Quiz Visual"
                     className="max-h-36 sm:max-h-44 w-auto rounded-2xl border border-slate-700/80 shadow-lg object-contain bg-slate-900/60 p-1.5"
                   />
+                </div>
+              )}
+
+              {isMemoryMatch && (
+                <div className="inline-flex items-center flex-wrap justify-center gap-2 text-[11px] sm:text-xs font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 px-3.5 py-1.5 rounded-full">
+                  <span>🏛️ Matched: {matchedPairIds.length} / {MEMORY_MATCH_TOTAL_PAIRS} Pairs</span>
+                  <span>•</span>
+                  <span>🎯 Moves: {movesCount}</span>
+                  {comboStreak > 1 && (
+                    <>
+                      <span>•</span>
+                      <span className="text-amber-400 font-extrabold flex items-center gap-1">
+                        <Flame className="w-3.5 h-3.5 fill-current" />
+                        {comboStreak}x Streak (+{(comboStreak - 1) * 25} pts)
+                      </span>
+                    </>
+                  )}
+                  <span>•</span>
+                  <span className="text-emerald-400 font-mono">Score: {memoryScore} pts</span>
                 </div>
               )}
 
@@ -1250,7 +1495,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
               </p>
 
               {/* Audio Pattern Synthesis Button for Music Questions */}
-              {!isWordScramble && !isGuessNumber && (currentQ.category === 'music_culture' || currentQ.subCategory === 'Music') && (
+              {!isWordScramble && !isGuessNumber && !isMemoryMatch && (currentQ.category === 'music_culture' || currentQ.subCategory === 'Music') && (
                 <div className="pt-1">
                   <button
                     onClick={() => {
@@ -1265,8 +1510,120 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
               )}
             </div>
 
-            {/* Interactive Gameplay Controls: Guess the Number vs Word Scramble vs Multiple Choice */}
-            {isGuessNumber ? (
+            {/* Interactive Gameplay Controls: Memory Match vs Guess the Number vs Word Scramble vs Multiple Choice */}
+            {isMemoryMatch ? (
+              <div className="space-y-4">
+                {/* 4x4 Card Grid (16 Cards, 8 Pairs) */}
+                <div className="bg-[#0E1526] border border-cyan-500/25 rounded-3xl p-3.5 sm:p-5 shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between text-xs font-bold px-1">
+                    <span className="text-cyan-400 uppercase tracking-wider text-[10px] sm:text-xs flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                      4x4 Cultural Grid · Tap 2 Cards to Match Pairs
+                    </span>
+                    <span className="text-slate-400 font-mono text-[11px] sm:text-xs">
+                      {matchedPairIds.length} / {MEMORY_MATCH_TOTAL_PAIRS} Pairs Discovered
+                    </span>
+                  </div>
+
+                  {/* 4x4 Responsive Grid */}
+                  <div className="grid grid-cols-4 gap-2 sm:gap-3 md:gap-3.5 max-w-lg mx-auto">
+                    {memoryDeck.map((card, idx) => {
+                      const isFlipped = flippedCardIndices.includes(idx);
+                      const isMatched = matchedPairIds.includes(card.pairId);
+                      const isMismatched = mismatchedIndices.includes(idx);
+
+                      if (isMatched) {
+                        return (
+                          <div
+                            key={card.id}
+                            className="bg-[#0A231C] border-2 border-emerald-400/80 rounded-2xl sm:rounded-3xl p-1.5 sm:p-2.5 flex flex-col items-center justify-center text-center shadow-lg shadow-emerald-500/15 aspect-square sm:aspect-[4/5] relative select-none animate-fade-in"
+                          >
+                            <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center shadow-sm">
+                              <Check className="w-2.5 h-2.5 stroke-[3]" />
+                            </div>
+                            <span className="text-2xl sm:text-3xl md:text-4xl mb-0.5 filter drop-shadow">
+                              {card.icon}
+                            </span>
+                            <span className="text-[10px] sm:text-xs font-black text-white truncate max-w-full px-1">
+                              {card.name}
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-bold text-emerald-300 bg-[#0B0F19]/80 px-1.5 py-0.5 rounded-md mt-0.5">
+                              <span>{card.countryFlag}</span>
+                              <span className="truncate max-w-[40px] sm:max-w-[60px]">{card.countryCode}</span>
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      if (isFlipped) {
+                        return (
+                          <div
+                            key={card.id}
+                            className={`rounded-2xl sm:rounded-3xl p-1.5 sm:p-2.5 flex flex-col items-center justify-center text-center shadow-xl aspect-square sm:aspect-[4/5] relative select-none transition-all ${
+                              isMismatched
+                                ? 'bg-[#2D121B] border-2 border-rose-500 text-rose-200 animate-pulse'
+                                : 'bg-[#131E38] border-2 border-cyan-400 text-cyan-100 shadow-cyan-500/30 scale-102'
+                            }`}
+                          >
+                            <span className="text-2xl sm:text-3xl md:text-4xl mb-0.5 filter drop-shadow">
+                              {card.icon}
+                            </span>
+                            <span className="text-[10px] sm:text-xs font-black text-white truncate max-w-full px-1">
+                              {card.name}
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-bold text-slate-200 bg-[#0B0F19]/80 px-1.5 py-0.5 rounded-md mt-0.5">
+                              <span>{card.countryFlag}</span>
+                              <span className="truncate max-w-[40px] sm:max-w-[60px]">{card.countryCode}</span>
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      // Face-down card
+                      return (
+                        <button
+                          key={card.id}
+                          type="button"
+                          disabled={hasAnswered || showExplanation || isCheckingPair}
+                          onClick={() => handleMemoryCardClick(idx)}
+                          className="bg-[#0B0F19] hover:bg-[#121B30] active:scale-95 border-2 border-cyan-500/30 hover:border-cyan-400/80 rounded-2xl sm:rounded-3xl p-2 sm:p-3 flex flex-col items-center justify-center text-center shadow-md transition-all cursor-pointer aspect-square sm:aspect-[4/5] select-none group"
+                        >
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 group-hover:scale-110 group-hover:bg-cyan-500/20 transition-all">
+                            <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400/80" />
+                          </div>
+                          <span className="text-[9px] sm:text-[10px] font-black text-slate-500 group-hover:text-cyan-400 uppercase tracking-widest mt-1.5 transition-colors">
+                            MAPIA
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Fact banner for the last matched card */}
+                  {lastMatchedCard && (
+                    <div className="p-3 sm:p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-200 text-xs sm:text-sm flex items-center gap-3 animate-fade-in">
+                      <div className="text-2xl shrink-0">{lastMatchedCard.icon}</div>
+                      <div className="min-w-0">
+                        <span className="font-extrabold text-white mr-1.5">
+                          {lastMatchedCard.name} ({lastMatchedCard.countryFlag} {lastMatchedCard.countryName}):
+                        </span>
+                        <span className="text-emerald-300">{lastMatchedCard.fact}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Solved or In Progress Status Banner */}
+                  {hasAnswered && selectedAnswer === 'matched_all' && (
+                    <div className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/50 text-emerald-300 text-xs sm:text-sm font-extrabold text-center flex items-center justify-center gap-2 animate-fade-in">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>
+                        Grid Cleared! Final Score: +{lastEarnedPoints || memoryScore} pts — Concluding match...
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : isGuessNumber ? (
               <div className="space-y-4">
                 {/* Latest Hint Banner & Narrowed Bounds */}
                 <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 space-y-4">

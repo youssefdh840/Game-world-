@@ -200,48 +200,48 @@ export const PlayScreen: React.FC<PlayScreenProps> = ({ onStartMatch }) => {
         <button
           onClick={() => {
             sounds.playPop();
-            onStartMatch('cultural_quiz');
+            onStartMatch('memory_match');
           }}
           type="button"
-          className="w-full relative group overflow-hidden bg-[#111827] hover:bg-[#151E32] border border-blue-500/30 hover:border-blue-400/70 rounded-3xl p-5 sm:p-7 flex flex-col sm:flex-row sm:items-center justify-between text-left shadow-xl active:translate-y-0.5 transition-all cursor-pointer gap-5 select-none"
+          className="w-full relative group overflow-hidden bg-[#111827] hover:bg-[#151E32] border border-cyan-500/30 hover:border-cyan-400/70 rounded-3xl p-5 sm:p-7 flex flex-col sm:flex-row sm:items-center justify-between text-left shadow-xl active:translate-y-0.5 transition-all cursor-pointer gap-5 select-none"
         >
           <div className="flex items-start sm:items-center gap-4 sm:gap-5 min-w-0">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-3xl sm:text-4xl shadow-inner group-hover:scale-105 transition-transform shrink-0">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-3xl sm:text-4xl shadow-inner group-hover:scale-105 transition-transform shrink-0">
               🃏
             </div>
             <div className="min-w-0 space-y-2">
               <div className="flex items-center flex-wrap gap-2 text-xs">
-                <span className="font-extrabold uppercase tracking-wider text-blue-400 text-[10px] sm:text-xs">
-                  FLAGS &amp; LANDMARKS · PAIR MATCH
+                <span className="font-extrabold uppercase tracking-wider text-cyan-400 text-[10px] sm:text-xs">
+                  4X4 CARD GRID · 8 PAIRS · SPEED DUEL
                 </span>
                 <span className="text-slate-600">·</span>
                 <span className="font-mono font-bold text-amber-400">
                   +180 XP
                 </span>
               </div>
-              <h3 className="text-lg sm:text-2xl font-black text-white group-hover:text-blue-300 transition-colors">
+              <h3 className="text-lg sm:text-2xl font-black text-white group-hover:text-cyan-300 transition-colors">
                 Memory Match (World Explorer)
               </h3>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
-                Match cultural landmark pairs and world country flags against the clock to score combo points!
+                Flip and match pairs of global monuments, heritage landmarks, and world flags! Earn combo bonuses and race the timer.
               </p>
 
               <div className="flex items-center flex-wrap gap-1.5 pt-1 text-[10px] sm:text-xs font-semibold text-slate-300">
                 <span className="bg-[#0B0F19] border border-slate-800 px-2.5 py-1 rounded-xl">
-                  🏛️ Landmarks &amp; Flags
+                  🏛️ 8 Landmark Pairs
                 </span>
                 <span className="bg-[#0B0F19] border border-slate-800 px-2.5 py-1 rounded-xl">
-                  ⏱️ Quick Reflexes
+                  ⏱️ 50s Match Timer
                 </span>
                 <span className="bg-[#0B0F19] border border-slate-800 px-2.5 py-1 rounded-xl text-emerald-400">
-                  🧠 Memory Combos
+                  🔥 Combo Streaks &amp; Speed Bonus
                 </span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center justify-end sm:justify-center shrink-0">
-            <div className="px-5 py-3 sm:w-14 sm:h-14 sm:p-0 rounded-2xl sm:rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 text-white flex items-center justify-center gap-2 font-black text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all">
+            <div className="px-5 py-3 sm:w-14 sm:h-14 sm:p-0 rounded-2xl sm:rounded-full bg-gradient-to-r from-cyan-500 to-teal-500 text-slate-950 flex items-center justify-center gap-2 font-black text-xs sm:text-sm shadow-md shadow-cyan-500/20 transition-all">
               <span className="sm:hidden">Play Memory Match</span>
               <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current sm:ml-0.5" />
             </div>

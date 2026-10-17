@@ -168,6 +168,8 @@ function AppContent() {
               ? 'word_scramble'
               : prevMode === 'guess_number'
               ? 'guess_number'
+              : prevMode === 'memory_match'
+              ? 'memory_match'
               : 'cultural_quiz',
             prevCountry
           );
