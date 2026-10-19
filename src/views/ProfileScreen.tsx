@@ -5,6 +5,8 @@ import { COUNTRIES, getCountryByCode } from '../services/countryData';
 import { BADGES } from '../services/badgesData';
 import { calculateLevel, subscribeToUserProfile } from '../services/userService';
 import { sounds } from '../services/soundEffects';
+import { ThemeToggleCard } from '../components/ThemeToggleCard';
+import { useTheme } from '../context/ThemeContext';
 import {
   sanitizeUsername,
   sanitizeBio,
@@ -91,6 +93,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   setSoundEnabled,
 }) => {
   const { logout, firebaseUser, updateProfile } = useAuth();
+  const { isDark } = useTheme();
   const [liveUser, setLiveUser] = useState<UserProfile>(user);
   const [isEditing, setIsEditing] = useState(false);
   const [username, setUsername] = useState(user.username);
@@ -243,9 +246,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   return (
     <div className="max-w-4xl mx-auto space-y-6 sm:space-y-7 pb-8 animate-fade-in">
       {/* Profile Card Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-slate-800/80 border border-slate-700/60 p-5 sm:p-7 md:p-8 shadow-xl text-center">
+      <div
+        className={`relative overflow-hidden rounded-3xl p-5 sm:p-7 md:p-8 shadow-xl text-center transition-colors duration-300 ${
+          isDark
+            ? 'bg-slate-800/80 border border-slate-700/60'
+            : 'bg-white/90 border border-slate-200/90 shadow-md'
+        }`}
+      >
         {/* Glow backdrop */}
-        <div className="absolute -top-10 -right-10 w-36 h-36 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+        <div
+          className={`absolute -top-10 -right-10 w-36 h-36 rounded-full blur-2xl pointer-events-none transition-colors duration-500 ${
+            isDark ? 'bg-cyan-500/10' : 'bg-amber-400/20'
+          }`}
+        />
 
         {/* Hidden File Input for Direct Avatar Upload */}
         <input
@@ -260,7 +273,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <img
             src={isEditing ? avatar || liveUser.avatar : liveUser.avatar}
             alt={liveUser.username}
-            className="w-20 h-20 sm:w-24 sm:h-24 mx-auto rounded-3xl object-cover ring-2 ring-indigo-500/50 shadow-xl bg-slate-900"
+            className={`w-20 h-20 sm:w-24 sm:h-24 mx-auto rounded-3xl object-cover ring-2 shadow-xl ${
+              isDark
+                ? 'ring-indigo-500/50 bg-slate-900'
+                : 'ring-amber-400/60 bg-slate-100'
+            }`}
           />
           <button
             type="button"
@@ -291,28 +308,42 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               <Camera className="w-3.5 h-3.5" />
             )}
           </button>
-          <span className="absolute -bottom-1 -right-1 text-2xl p-0.5 bg-slate-900 rounded-full shadow pointer-events-none">
+          <span
+            className={`absolute -bottom-1 -right-1 text-2xl p-0.5 rounded-full shadow pointer-events-none ${
+              isDark ? 'bg-slate-900' : 'bg-white'
+            }`}
+          >
             {liveUser.countryFlag}
           </span>
         </div>
 
-        <h2 className="text-xl sm:text-2xl font-black text-white">{liveUser.username}</h2>
-        <p className="text-xs sm:text-sm text-slate-300 font-semibold mt-1">
+        <h2 className={`text-xl sm:text-2xl font-black ${isDark ? 'text-white' : 'text-slate-950'}`}>
+          {liveUser.username}
+        </h2>
+        <p className={`text-xs sm:text-sm font-semibold mt-1 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
           {liveUser.countryName} • {liveUser.preferredLanguage || 'English'}
         </p>
-        <p className="text-xs sm:text-sm text-slate-400 mt-2 max-w-md mx-auto italic leading-relaxed">
+        <p
+          className={`text-xs sm:text-sm mt-2 max-w-md mx-auto italic leading-relaxed ${
+            isDark ? 'text-slate-400' : 'text-slate-500'
+          }`}
+        >
           "{liveUser.bio || 'World Challenge traveler ready for cultural duels!'}"
         </p>
 
         {/* Level & XP */}
-        <div className="mt-5 pt-4 border-t border-slate-700/60 max-w-xl mx-auto">
+        <div className={`mt-5 pt-4 border-t max-w-xl mx-auto ${isDark ? 'border-slate-700/60' : 'border-slate-200'}`}>
           <div className="flex justify-between items-center text-xs sm:text-sm mb-1.5 font-bold">
             <span className="text-indigo-400 font-black">Level {levelInfo.level}</span>
-            <span className="text-slate-400 font-mono">
+            <span className={`font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
               {levelInfo.xpInCurrentLevel} / {levelInfo.nextLevelThreshold - levelInfo.currentLevelBase} XP ({liveUser.xp || 0} Total XP)
             </span>
           </div>
-          <div className="w-full h-3 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-700/50">
+          <div
+            className={`w-full h-3 rounded-full overflow-hidden p-0.5 border ${
+              isDark ? 'bg-slate-900 border-slate-700/50' : 'bg-slate-100 border-slate-200'
+            }`}
+          >
             <div
               className="h-full rounded-full bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-500"
               style={{ width: `${Math.max(5, levelInfo.progressPercent)}%` }}
@@ -326,7 +357,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             sounds.playPop();
             setIsEditing(!isEditing);
           }}
-          className="mt-5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-indigo-400 hover:text-indigo-300 bg-slate-900 border border-slate-700 px-4 py-2 rounded-xl cursor-pointer transition-colors"
+          className={`mt-5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold px-4 py-2 rounded-xl cursor-pointer transition-colors border ${
+            isDark
+              ? 'text-indigo-400 hover:text-indigo-300 bg-slate-900 border-slate-700'
+              : 'text-indigo-600 hover:text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
+          }`}
         >
           <Edit2 className="w-3.5 h-3.5" />
           <span>{isEditing ? 'Cancel Editing' : 'Edit Profile'}</span>
@@ -530,25 +565,43 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
       {/* Career Statistics Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4">
-        <div className="bg-slate-800/80 border border-slate-700/60 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
+        <div
+          className={`border rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg transition-colors ${
+            isDark ? 'bg-slate-800/80 border-slate-700/60' : 'bg-white/90 border-slate-200/80 shadow-md'
+          }`}
+        >
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">Games Played</span>
             <Gamepad2 className="w-4 h-4 text-sky-400 shrink-0" />
           </div>
-          <span className="text-2xl sm:text-3xl font-black text-white">{totalGamesPlayed}</span>
-          <span className="text-[10px] sm:text-xs text-slate-400 mt-1">Total duels &amp; quests</span>
+          <span className={`text-2xl sm:text-3xl font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            {totalGamesPlayed}
+          </span>
+          <span className={`text-[10px] sm:text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            Total duels &amp; quests
+          </span>
         </div>
 
-        <div className="bg-slate-800/80 border border-slate-700/60 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
+        <div
+          className={`border rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg transition-colors ${
+            isDark ? 'bg-slate-800/80 border-slate-700/60' : 'bg-white/90 border-slate-200/80 shadow-md'
+          }`}
+        >
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">Victories</span>
             <Trophy className="w-4 h-4 text-amber-400 shrink-0" />
           </div>
           <span className="text-2xl sm:text-3xl font-black text-amber-400">{totalVictories}</span>
-          <span className="text-[10px] sm:text-xs text-slate-400 mt-1">{winRate}% win rate</span>
+          <span className={`text-[10px] sm:text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            {winRate}% win rate
+          </span>
         </div>
 
-        <div className="bg-slate-800/80 border border-slate-700/60 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
+        <div
+          className={`border rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg transition-colors ${
+            isDark ? 'bg-slate-800/80 border-slate-700/60' : 'bg-white/90 border-slate-200/80 shadow-md'
+          }`}
+        >
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">Discovered</span>
             <Globe className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -556,16 +609,24 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <span className="text-2xl sm:text-3xl font-black text-emerald-400">
             {liveUser.discoveredCountries?.length || 1}
           </span>
-          <span className="text-[10px] sm:text-xs text-slate-400 mt-1">Country visas stamped</span>
+          <span className={`text-[10px] sm:text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            Country visas stamped
+          </span>
         </div>
 
-        <div className="bg-slate-800/80 border border-slate-700/60 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg">
+        <div
+          className={`border rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg transition-colors ${
+            isDark ? 'bg-slate-800/80 border-slate-700/60' : 'bg-white/90 border-slate-200/80 shadow-md'
+          }`}
+        >
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">Play Streak</span>
             <Flame className="w-4 h-4 text-amber-400 shrink-0" />
           </div>
           <span className="text-2xl sm:text-3xl font-black text-amber-400">{liveUser.dailyStreak || 1}</span>
-          <span className="text-[10px] sm:text-xs text-slate-400 mt-1">Days in a row</span>
+          <span className={`text-[10px] sm:text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            Days in a row
+          </span>
         </div>
       </div>
 

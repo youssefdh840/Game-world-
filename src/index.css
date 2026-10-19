@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+:root {
+  --canvas-bg: #0B0F19;
+  --surface-bg: #0E1526;
+  --surface-border: #1E293B;
+  --text-main: #F1F5F9;
+  --text-muted: #94A3B8;
+  --text-dim: #64748B;
+  --glow-cyan: rgba(6, 182, 212, 0.2);
+  --glow-amber: rgba(245, 158, 11, 0.2);
+}
+
 html {
   background-color: #0B0F19;
   color-scheme: dark;
@@ -7,11 +18,25 @@ html {
   -webkit-text-size-adjust: 100%;
   touch-action: pan-y;
   overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+html.light {
+  --canvas-bg: #F8FAFC;
+  --surface-bg: #FFFFFF;
+  --surface-border: #E2E8F0;
+  --text-main: #0F172A;
+  --text-muted: #475569;
+  --text-dim: #64748B;
+  --glow-cyan: rgba(6, 182, 212, 0.25);
+  --glow-amber: rgba(245, 158, 11, 0.3);
+  background-color: #F8FAFC !important;
+  color-scheme: light;
 }
 
 body {
   background-color: #0B0F19;
-  color: #f1f5f9;
+  color: #F1F5F9;
   margin: 0;
   padding: 0;
   min-height: 100vh;
@@ -23,6 +48,12 @@ body {
   touch-action: pan-y;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+html.light body {
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
 }
 
 #root {
@@ -34,6 +65,11 @@ body {
   flex-direction: column;
   touch-action: pan-y;
   overflow-x: hidden;
+  transition: background-color 0.3s ease;
+}
+
+html.light #root {
+  background-color: #F8FAFC !important;
 }
 
 main {

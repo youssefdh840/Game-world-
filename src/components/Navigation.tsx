@@ -14,6 +14,7 @@ import {
   LogIn,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { sounds } from '../services/soundEffects';
 
 interface NavigationProps {
@@ -41,6 +42,7 @@ export const TopHeader: React.FC<{
   onOpenAuth,
 }) => {
   const { userProfile, firebaseUser } = useAuth();
+  const { isDark } = useTheme();
   const isGuest = !firebaseUser || firebaseUser.isAnonymous;
 
   const handleToggleSound = () => {
@@ -50,11 +52,23 @@ export const TopHeader: React.FC<{
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-[#0E1424]/90 backdrop-blur-md border-b border-slate-800/80 px-3.5 sm:px-6 md:px-8 pt-safe pb-2.5 sm:py-3.5">
+    <header
+      className={`sticky top-0 z-40 backdrop-blur-md border-b px-3.5 sm:px-6 md:px-8 pt-safe pb-2.5 sm:py-3.5 transition-colors duration-300 ${
+        isDark
+          ? 'bg-[#0E1424]/90 border-slate-800/80 text-white'
+          : 'bg-white/90 border-slate-200/90 text-slate-900 shadow-xs'
+      }`}
+    >
       <div className="w-full max-w-md sm:max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto flex items-center justify-between gap-2 sm:gap-3">
         {/* Brand / User Badge */}
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1 overflow-hidden">
-          <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-800 border border-cyan-500/40 p-0.5 shadow-sm shrink-0">
+          <div
+            className={`relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl p-0.5 shadow-sm shrink-0 border ${
+              isDark
+                ? 'bg-slate-800 border-cyan-500/40'
+                : 'bg-white border-amber-400/50'
+            }`}
+          >
             {userProfile?.avatar ? (
               <img
                 src={userProfile.avatar}
@@ -69,17 +83,37 @@ export const TopHeader: React.FC<{
           </div>
           <div className="min-w-0 flex-1">
             <h1 className="text-sm sm:text-base font-black tracking-tight truncate flex items-center gap-1.5 leading-tight">
-              <span className="text-white">MAPIA</span>
-              <span className="text-[10px] tracking-widest text-cyan-400 font-extrabold uppercase px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/30">
+              <span className={isDark ? 'text-white' : 'text-slate-950'}>MAPIA</span>
+              <span
+                className={`text-[10px] tracking-widest font-extrabold uppercase px-1.5 py-0.5 rounded border ${
+                  isDark
+                    ? 'text-cyan-400 bg-cyan-950/60 border-cyan-500/30'
+                    : 'text-amber-700 bg-amber-50 border-amber-300/80'
+                }`}
+              >
                 WORLD
               </span>
             </h1>
-            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-slate-300 font-semibold mt-0.5 min-w-0">
+            <div
+              className={`flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold mt-0.5 min-w-0 ${
+                isDark ? 'text-slate-300' : 'text-slate-600'
+              }`}
+            >
               <span className="shrink-0 leading-none">{userProfile?.countryFlag || '🌐'}</span>
-              <span className="truncate font-bold text-slate-200 max-w-[130px] sm:max-w-[220px]">
+              <span
+                className={`truncate font-bold max-w-[130px] sm:max-w-[220px] ${
+                  isDark ? 'text-slate-200' : 'text-slate-800'
+                }`}
+              >
                 {userProfile?.username || 'Guest'}
               </span>
-              <span className="bg-slate-800 border border-slate-700/80 text-amber-400 px-1.5 py-0.5 rounded text-[10px] font-extrabold shrink-0 leading-none">
+              <span
+                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold shrink-0 leading-none border ${
+                  isDark
+                    ? 'bg-slate-800 border-slate-700/80 text-amber-400'
+                    : 'bg-amber-50 border-amber-200 text-amber-700'
+                }`}
+              >
                 Lv.{userProfile?.level || 1}
               </span>
             </div>
@@ -133,7 +167,11 @@ export const TopHeader: React.FC<{
           <button
             onClick={handleToggleSound}
             title={soundEnabled ? 'Mute Sounds' : 'Unmute Sounds'}
-            className="p-2 rounded-full bg-slate-800/90 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer shrink-0"
+            className={`p-2 rounded-full transition-colors cursor-pointer shrink-0 ${
+              isDark
+                ? 'bg-slate-800/90 hover:bg-slate-700 text-slate-300'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+            }`}
           >
             {soundEnabled ? (
               <Volume2 className="w-4 h-4 text-cyan-400" />
@@ -165,6 +203,7 @@ export const BottomNavigation: React.FC<NavigationProps> = ({
   currentTab,
   setCurrentTab,
 }) => {
+  const { isDark } = useTheme();
   const tabs: {
     id: 'home' | 'explore' | 'play' | 'passport' | 'profile';
     label: string;
@@ -179,7 +218,11 @@ export const BottomNavigation: React.FC<NavigationProps> = ({
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#0E1424]/95 backdrop-blur-xl border-t border-slate-800/90 pb-safe px-2 sm:px-6">
+    <nav
+      className={`fixed bottom-0 left-0 right-0 z-40 backdrop-blur-xl border-t pb-safe px-2 sm:px-6 transition-colors duration-300 ${
+        isDark ? 'bg-[#0E1424]/95 border-slate-800/90' : 'bg-white/95 border-slate-200/90 shadow-lg'
+      }`}
+    >
       <div className="w-full max-w-md sm:max-w-xl md:max-w-2xl mx-auto flex items-center justify-around py-2 sm:py-2.5 select-none">
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -214,7 +257,7 @@ export const BottomNavigation: React.FC<NavigationProps> = ({
                 </div>
                 <span
                   className={`text-[10px] font-extrabold mt-1 transition-colors ${
-                    isActive ? 'text-cyan-400' : 'text-slate-400'
+                    isActive ? 'text-cyan-400' : isDark ? 'text-slate-400' : 'text-slate-500'
                   }`}
                 >
                   {tab.label}
@@ -229,7 +272,11 @@ export const BottomNavigation: React.FC<NavigationProps> = ({
               onClick={handleTabClick}
               type="button"
               className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all duration-150 active:scale-95 cursor-pointer select-none ${
-                isActive ? 'text-cyan-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+                isActive
+                  ? 'text-cyan-400 font-bold'
+                  : isDark
+                  ? 'text-slate-400 hover:text-slate-200'
+                  : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               <div className="relative">
