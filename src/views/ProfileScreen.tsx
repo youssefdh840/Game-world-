@@ -6,6 +6,12 @@ import { BADGES } from '../services/badgesData';
 import { calculateLevel, subscribeToUserProfile } from '../services/userService';
 import { sounds } from '../services/soundEffects';
 import {
+  sanitizeUsername,
+  sanitizeBio,
+  isValidAvatarUrl,
+  sanitizeAvatarUrl,
+} from '../utils/security';
+import {
   Globe,
   Award,
   Trophy,
@@ -170,16 +176,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const handleApplyAvatarUrl = async () => {
     const trimmed = avatarUrlInput.trim();
     if (!trimmed) return;
-    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://') && !trimmed.startsWith('data:image/')) {
-      setAvatarError('Please enter a valid image URL starting with https://');
+    if (!isValidAvatarUrl(trimmed)) {
+      setAvatarError('Please enter a secure image URL (HTTPS only) or valid base64 image data.');
       sounds.playWrong();
       return;
     }
+    const safeAvatar = sanitizeAvatarUrl(trimmed);
     setAvatarError(null);
-    setAvatar(trimmed);
-    setLiveUser((prev) => ({ ...prev, avatar: trimmed }));
+    setAvatar(safeAvatar);
+    setLiveUser((prev) => ({ ...prev, avatar: safeAvatar }));
     setAvatarUrlInput('');
-    await updateProfile({ avatar: trimmed });
+    await updateProfile({ avatar: safeAvatar });
     sounds.playCorrect();
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
@@ -191,17 +198,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     setAvatarError(null);
     sounds.playPop();
 
+    const cleanUsername = sanitizeUsername(username, user.username || 'Explorer');
+    if (cleanUsername.length < 2) {
+      setAvatarError('Username must be between 2 and 30 characters.');
+      setSaving(false);
+      sounds.playWrong();
+      return;
+    }
+
     const selectedCountry = getCountryByCode(countryCode) || COUNTRIES[0];
-    const finalAvatar = avatarUrlInput.trim() || avatar || liveUser.avatar;
+    const candidateAvatar = avatarUrlInput.trim() || avatar || liveUser.avatar;
+    const finalAvatar = sanitizeAvatarUrl(candidateAvatar);
+    const cleanBio = sanitizeBio(bio);
 
     try {
       await updateProfile({
-        username: username.trim(),
+        username: cleanUsername,
         avatar: finalAvatar,
         countryCode: selectedCountry.code,
         countryName: selectedCountry.name,
         countryFlag: selectedCountry.flag,
-        bio: bio.trim(),
+        bio: cleanBio,
         preferredLanguage: language,
       });
       sounds.playCorrect();

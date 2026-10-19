@@ -36,73 +36,103 @@ service cloud.firestore {
       );
     }
 
-    // Admins Collection
+    // Admins Collection: Read for signed-in users (to verify permissions), write only by admin
     match /admins/{adminId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read: if isSignedIn() && isValidId(adminId);
+      allow write: if isAdmin() && isValidId(adminId);
     }
 
-    // Users Collection
+    // Users Collection: Public reading for profiles and leaderboards; strict owner mutation
     match /users/{userId} {
       allow get: if isValidId(userId);
       allow list: if true;
 
+      // Profile creation: user can only create their own profile; cannot elevate role to admin
       allow create: if isOwner(userId) && isValidId(userId) &&
         incoming().uid == userId &&
-        incoming().username is string && incoming().username.size() >= 2 && incoming().username.size() <= 50;
+        incoming().username is string && incoming().username.size() >= 2 && incoming().username.size() <= 50 &&
+        (!('role' in incoming()) || incoming().role != 'admin' || isAdmin());
 
-      allow update: if (isOwner(userId) || isAdmin()) && isValidId(userId);
-      allow delete: if isAdmin();
+      // Profile updates: user can update their own profile; uid remains immutable; role escalation forbidden
+      allow update: if isValidId(userId) && (
+        isAdmin() || (
+          isOwner(userId) &&
+          incoming().uid == existing().uid &&
+          (!('role' in incoming()) || incoming().role == existing().role || isAdmin())
+        )
+      );
 
-      // Subcollection: Passport
+      allow delete: if isAdmin() && isValidId(userId);
+
+      // Subcollection: User's Virtual Passport Stamps
       match /passport/{countryCode} {
         allow read: if isValidId(userId);
         allow create, update: if (isOwner(userId) || isAdmin()) && isValidId(countryCode);
-        allow delete: if isOwner(userId) || isAdmin();
+        allow delete: if (isOwner(userId) || isAdmin()) && isValidId(countryCode);
       }
     }
 
-    // Game Rooms Collection
+    // Game Rooms Collection: Authenticated players can only manipulate their participating rooms
     match /gameRooms/{roomId} {
       allow get: if isSignedIn() && isValidId(roomId);
       allow list: if isSignedIn();
 
+      // Host or guest can create a room containing their own UID
       allow create: if isSignedIn() && isValidId(roomId) && (
         incoming().hostId == request.auth.uid ||
         incoming().guestId == request.auth.uid
       );
 
+      // Updates: Restricted to participants; terminal state locking prevents tampering once finished
       allow update: if isSignedIn() && isValidId(roomId) && (
-        isAdmin() ||
-        resource.data.hostId == request.auth.uid ||
-        resource.data.guestId == request.auth.uid ||
-        (resource.data.status == 'waiting' && incoming().guestId == request.auth.uid)
+        isAdmin() || (
+          (
+            resource.data.hostId == request.auth.uid ||
+            resource.data.guestId == request.auth.uid ||
+            (resource.data.status == 'waiting' && incoming().guestId == request.auth.uid)
+          ) &&
+          // Cannot modify scores/game outcome once match is completed unless admin
+          (resource.data.status != 'finished' || incoming().status == 'finished')
+        )
       );
 
-      allow delete: if isAdmin() || (isSignedIn() && (resource.data.hostId == request.auth.uid || resource.data.guestId == request.auth.uid));
+      allow delete: if isAdmin() || (
+        isSignedIn() && isValidId(roomId) && (
+          resource.data.hostId == request.auth.uid ||
+          resource.data.guestId == request.auth.uid
+        )
+      );
 
-      // In-Game Messages
+      // In-Game Messages: Only participants in the room can send messages
       match /messages/{messageId} {
         allow read: if isSignedIn() && isValidId(roomId);
-        allow create: if isSignedIn() && isValidId(messageId) &&
+        allow create: if isSignedIn() && isValidId(roomId) && isValidId(messageId) &&
           incoming().senderId == request.auth.uid &&
-          incoming().text is string && incoming().text.size() <= 500;
+          incoming().text is string && incoming().text.size() <= 500 && (
+            isAdmin() ||
+            get(/databases/$(database)/documents/gameRooms/$(roomId)).data.hostId == request.auth.uid ||
+            get(/databases/$(database)/documents/gameRooms/$(roomId)).data.guestId == request.auth.uid
+          );
         allow update, delete: if isAdmin();
       }
     }
 
-    // Matchmaking Queue
+    // Matchmaking Queue: Ticket owner can create, update, or cancel their ticket
     match /matchmaking/{ticketId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isValidId(ticketId) &&
         incoming().userId == request.auth.uid;
-      allow update: if isSignedIn() && isValidId(ticketId);
-      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && isValidId(ticketId) && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow delete: if isSignedIn() && isValidId(ticketId) && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
     }
 
-    // Friendships Collection
+    // Friendships Collection: Requesters and receivers have access
     match /friendships/{friendshipId} {
-      allow read: if isSignedIn() && (
+      allow read: if isSignedIn() && isValidId(friendshipId) && (
         resource.data.requesterId == request.auth.uid ||
         resource.data.receiverId == request.auth.uid ||
         isAdmin()
@@ -114,27 +144,28 @@ service cloud.firestore {
         resource.data.receiverId == request.auth.uid ||
         isAdmin()
       );
-      allow delete: if isSignedIn() && (
+      allow delete: if isSignedIn() && isValidId(friendshipId) && (
         resource.data.requesterId == request.auth.uid ||
         resource.data.receiverId == request.auth.uid ||
         isAdmin()
       );
     }
 
-    // Reports Collection
+    // Reports Collection: Only reporter can create report; only admins can inspect/resolve
     match /reports/{reportId} {
       allow create: if isSignedIn() && isValidId(reportId) &&
-        incoming().reporterId == request.auth.uid;
+        incoming().reporterId == request.auth.uid &&
+        incoming().reason is string && incoming().reason.size() <= 200;
       allow read, update, delete: if isAdmin();
     }
 
-    // Questions Catalog
+    // Questions Catalog: Public read, admin write
     match /questions/{questionId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // Countries Catalog
+    // Countries Catalog: Public read, admin write
     match /countries/{countryCode} {
       allow read: if true;
       allow write: if isAdmin();

@@ -17,6 +17,11 @@ import { UserProfile, PassportStamp } from '../types/game';
 import { getCountryByCode } from './countryData';
 import { getSyncDetectedCountry } from './geolocationService';
 import { BADGES } from './badgesData';
+import {
+  sanitizeUsername,
+  sanitizeBio,
+  sanitizeAvatarUrl,
+} from '../utils/security';
 
 export function getTodayDateString(): string {
   return new Date().toISOString().split('T')[0];
@@ -140,13 +145,13 @@ export function normalizeUserProfile(raw: Partial<UserProfile> | null | undefine
 
   return {
     uid: resolvedUid,
-    username: raw?.username || `Explorer_${resolvedUid.slice(0, 4)}`,
+    username: sanitizeUsername(raw?.username || '', `Explorer_${resolvedUid.slice(0, 4)}`),
     email: raw?.email,
-    avatar: raw?.avatar || DEFAULT_AVATAR_URL,
+    avatar: sanitizeAvatarUrl(raw?.avatar),
     countryCode,
     countryName: countryInfo?.name || raw?.countryName || syncGeo.countryName || 'Tunisia',
     countryFlag: countryInfo?.flag || raw?.countryFlag || syncGeo.countryFlag || '🇹🇳',
-    bio: raw?.bio || 'Passionate world traveler and quiz challenger!',
+    bio: sanitizeBio(raw?.bio || 'Passionate world traveler and quiz challenger!'),
     preferredLanguage: raw?.preferredLanguage || 'English',
     age: raw?.age,
     level: levelVal,
@@ -273,7 +278,21 @@ export async function createUserProfile(profile: UserProfile): Promise<void> {
 export async function updateUserProfile(uid: string, updates: Partial<UserProfile>): Promise<void> {
   const targetUid = auth.currentUser?.uid || uid;
   if (!targetUid) return;
-  const cleanUpdates = sanitizeProfileData(updates as Record<string, unknown>);
+
+  const sanitizedInput: Partial<UserProfile> = { ...updates };
+  if (sanitizedInput.username !== undefined) {
+    sanitizedInput.username = sanitizeUsername(sanitizedInput.username, 'Explorer');
+  }
+  if (sanitizedInput.bio !== undefined) {
+    sanitizedInput.bio = sanitizeBio(sanitizedInput.bio);
+  }
+  if (sanitizedInput.avatar !== undefined) {
+    sanitizedInput.avatar = sanitizeAvatarUrl(sanitizedInput.avatar);
+  }
+  // Prevent arbitrary privilege escalation: non-admin cannot set role via client
+  delete (sanitizedInput as Record<string, unknown>).role;
+
+  const cleanUpdates = sanitizeProfileData(sanitizedInput as Record<string, unknown>);
 
   // Optimistically update local cached profile so UI refreshes immediately
   if (typeof window !== 'undefined') {

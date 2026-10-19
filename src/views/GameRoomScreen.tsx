@@ -33,6 +33,7 @@ import {
 import { awardGameResults } from '../services/userService';
 import { auth } from '../services/firebase';
 import { sounds } from '../services/soundEffects';
+import { sanitizeChatMessage } from '../utils/security';
 import confetti from 'canvas-confetti';
 import {
   Trophy,
@@ -1048,7 +1049,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
   const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim()) return;
+    const clean = sanitizeChatMessage(chatInput);
+    if (!clean) return;
     sounds.playPop();
     sendRoomChatMessage(
       room.id,
@@ -1058,7 +1060,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         avatar: user.avatar,
         countryFlag: user.countryFlag,
       },
-      chatInput.trim(),
+      clean,
       'text'
     );
     setChatInput('');

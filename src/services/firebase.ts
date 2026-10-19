@@ -31,25 +31,34 @@ export interface FirebaseConfigType {
 }
 
 export function getActiveFirebaseConfig(): FirebaseConfigType {
+  // 1. Resolve base configuration with environment variable overrides
+  const resolvedBase: FirebaseConfigType = {
+    apiKey: (import.meta.env.VITE_FIREBASE_API_KEY as string) || (baseFirebaseConfig as FirebaseConfigType).apiKey || '',
+    authDomain: (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string) || (baseFirebaseConfig as FirebaseConfigType).authDomain || '',
+    projectId: (import.meta.env.VITE_FIREBASE_PROJECT_ID as string) || (baseFirebaseConfig as FirebaseConfigType).projectId || '',
+    storageBucket: (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string) || (baseFirebaseConfig as FirebaseConfigType).storageBucket || '',
+    messagingSenderId: (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string) || (baseFirebaseConfig as FirebaseConfigType).messagingSenderId || '',
+    appId: (import.meta.env.VITE_FIREBASE_APP_ID as string) || (baseFirebaseConfig as FirebaseConfigType).appId || '',
+    measurementId: (import.meta.env.VITE_FIREBASE_MEASUREMENT_ID as string) || (baseFirebaseConfig as FirebaseConfigType).measurementId || '',
+    firestoreDatabaseId: (import.meta.env.VITE_FIREBASE_DATABASE_ID as string) || (baseFirebaseConfig as FirebaseConfigType).firestoreDatabaseId || '(default)',
+  };
+
   if (typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem('wc_custom_firebase_config');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (
-          parsed?.apiKey === 'AIzaSyAiXwQy74tSMJoYKykBvVe1XNWxcQIZMFU' ||
-          !parsed?.apiKey
-        ) {
+        if (!parsed?.apiKey || typeof parsed.apiKey !== 'string' || parsed.apiKey.length < 10) {
           localStorage.removeItem('wc_custom_firebase_config');
         } else if (parsed?.apiKey && parsed?.projectId) {
-          return { ...baseFirebaseConfig, ...parsed };
+          return { ...resolvedBase, ...parsed };
         }
       }
     } catch {
       // ignore
     }
   }
-  return baseFirebaseConfig as FirebaseConfigType;
+  return resolvedBase;
 }
 
 export function saveCustomFirebaseConfig(config: Partial<FirebaseConfigType>): void {

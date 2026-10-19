@@ -30,6 +30,11 @@ import {
   generateMemoryMatchDeck,
   type MemoryCard,
 } from './memoryMatchData';
+import {
+  sanitizeChatMessage,
+  sanitizeUsername,
+  sanitizeAvatarUrl,
+} from '../utils/security';
 
 export {
   fetchDynamicGameQuestions,
@@ -367,14 +372,14 @@ export async function sendRoomChatMessage(
   type: 'text' | 'emoji' | 'system' = 'text'
 ) {
   if (!roomId || roomId.startsWith('room_bot_')) return;
-  // Basic profanity / safety filtering
-  const sanitizedText = sanitizeText(text);
+  const sanitizedText = sanitizeChatMessage(text);
+  if (!sanitizedText && type === 'text') return;
 
   const messageData = sanitizeUpdates({
     roomId,
     senderId: sender.uid || auth.currentUser?.uid || 'player',
-    senderUsername: sender.username || 'Explorer',
-    senderAvatar: sender.avatar || '',
+    senderUsername: sanitizeUsername(sender.username || 'Explorer'),
+    senderAvatar: sanitizeAvatarUrl(sender.avatar),
     senderCountryFlag: sender.countryFlag || '🌍',
     text: sanitizedText,
     type,
@@ -391,6 +396,8 @@ export async function sendRoomChatMessage(
 export async function reportUser(report: Omit<ReportItem, 'id' | 'createdAt' | 'status'>) {
   const data = sanitizeUpdates({
     ...report,
+    reason: (report.reason || '').trim().slice(0, 200),
+    details: (report.details || '').trim().slice(0, 1000),
     status: 'pending',
     createdAt: new Date().toISOString(),
   });
@@ -400,14 +407,4 @@ export async function reportUser(report: Omit<ReportItem, 'id' | 'createdAt' | '
   } catch (error) {
     console.warn('Could not submit report:', error);
   }
-}
-
-function sanitizeText(raw: string): string {
-  const badWords = ['badword', 'swear', 'spam', 'hate'];
-  let clean = raw.trim().slice(0, 300);
-  badWords.forEach((word) => {
-    const reg = new RegExp(word, 'gi');
-    clean = clean.replace(reg, '***');
-  });
-  return clean;
 }
