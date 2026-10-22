@@ -18,20 +18,20 @@ html {
   -webkit-text-size-adjust: 100%;
   touch-action: pan-y;
   overflow-x: hidden;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
-html.light {
-  --canvas-bg: #F8FAFC;
-  --surface-bg: #FFFFFF;
-  --surface-border: #E2E8F0;
-  --text-main: #0F172A;
-  --text-muted: #475569;
-  --text-dim: #64748B;
-  --glow-cyan: rgba(6, 182, 212, 0.25);
-  --glow-amber: rgba(245, 158, 11, 0.3);
-  background-color: #F8FAFC !important;
-  color-scheme: light;
+html.theme-black {
+  --canvas-bg: #000000;
+  --surface-bg: #050505;
+  --surface-border: #18181B;
+  --text-main: #FFFFFF;
+  --text-muted: #A1A1AA;
+  --text-dim: #71717A;
+  --glow-cyan: rgba(6, 182, 212, 0.35);
+  --glow-amber: rgba(245, 158, 11, 0.35);
+  background-color: #000000 !important;
+  color-scheme: dark;
 }
 
 body {
@@ -48,12 +48,12 @@ body {
   touch-action: pan-y;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
-html.light body {
-  background-color: #F8FAFC !important;
-  color: #0F172A !important;
+html.theme-black body {
+  background-color: #000000 !important;
+  color: #FFFFFF !important;
 }
 
 #root {
@@ -65,11 +65,11 @@ html.light body {
   flex-direction: column;
   touch-action: pan-y;
   overflow-x: hidden;
-  transition: background-color 0.3s ease;
+  transition: background-color 0.25s ease;
 }
 
-html.light #root {
-  background-color: #F8FAFC !important;
+html.theme-black #root {
+  background-color: #000000 !important;
 }
 
 main {
@@ -140,7 +140,6 @@ main {
   }
   100% {
     transform: translateY(0);
-    opacity: 1;
   }
 }
 

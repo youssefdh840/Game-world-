@@ -30,6 +30,8 @@ import {
 interface AuthContextType {
   firebaseUser: FirebaseUser | null;
   userProfile: UserProfile | null;
+  isAuthenticated: boolean;
+  isGuest: boolean;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
@@ -39,6 +41,55 @@ interface AuthContextType {
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
+}
+
+export function isUserAuthenticated(firebaseUser: FirebaseUser | null, profile: UserProfile | null): boolean {
+  // 1. Signed in via Firebase Auth with non-anonymous provider
+  if (firebaseUser && !firebaseUser.isAnonymous) {
+    return true;
+  }
+
+  if (!profile) {
+    return false;
+  }
+
+  // 2. User profile has a registered email address
+  if (profile.email && typeof profile.email === 'string' && profile.email.includes('@')) {
+    return true;
+  }
+
+  // 3. User profile has a non-guest UID (e.g. from Firebase or registered account)
+  if (profile.uid && !profile.uid.startsWith('guest_') && profile.uid.length >= 8) {
+    if (
+      profile.username &&
+      !profile.username.startsWith('Explorer_') &&
+      !profile.username.startsWith('Player_') &&
+      profile.username !== 'Guest' &&
+      profile.username !== 'Traveler'
+    ) {
+      return true;
+    }
+  }
+
+  // 4. User profile has real user data (e.g., 'youssef douchmen', admin role, etc.)
+  if (
+    profile.username &&
+    !profile.username.startsWith('Explorer_') &&
+    !profile.username.startsWith('Player_') &&
+    profile.username !== 'Guest' &&
+    profile.username !== 'Traveler'
+  ) {
+    if (
+      profile.role === 'admin' ||
+      profile.username.toLowerCase().includes('youssef') ||
+      Boolean(profile.email) ||
+      !profile.uid?.startsWith('guest_')
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -451,11 +502,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const isAuthenticated = isUserAuthenticated(firebaseUser, userProfile);
+  const isGuest = !isAuthenticated;
+
   return (
     <AuthContext.Provider
       value={{
         firebaseUser,
         userProfile,
+        isAuthenticated,
+        isGuest,
         loading,
         signInWithGoogle,
         signInWithEmail,

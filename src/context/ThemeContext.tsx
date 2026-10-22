@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
-export type ThemeMode = 'dark' | 'light';
+export type ThemeMode = 'navy' | 'black';
 
 interface ThemeContextType {
   theme: ThemeMode;
   isDark: boolean;
+  isPureBlack: boolean;
   toggleTheme: () => void;
   setTheme: (theme: ThemeMode) => void;
 }
@@ -18,15 +19,18 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem(THEME_STORAGE_KEY);
-        if (saved === 'light' || saved === 'dark') {
-          return saved;
+        if (saved === 'black' || saved === 'pure_black') {
+          return 'black';
+        }
+        if (saved === 'navy' || saved === 'dark') {
+          return 'navy';
         }
       } catch {
         // ignore
       }
     }
-    // Default to Dark Mode as per specifications
-    return 'dark';
+    // Default to Classic Navy as per specifications
+    return 'navy';
   });
 
   const applyThemeToDOM = (mode: ThemeMode) => {
@@ -34,27 +38,30 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const root = document.documentElement;
     const body = document.body;
 
-    if (mode === 'dark') {
-      root.classList.add('dark');
-      root.classList.remove('light');
-      root.style.colorScheme = 'dark';
+    // Both themes are dark aesthetics; remove light mode completely
+    root.classList.add('dark');
+    root.classList.remove('light');
+    root.style.colorScheme = 'dark';
+
+    if (mode === 'black') {
+      root.classList.add('theme-black');
+      root.classList.remove('theme-navy');
+      root.style.backgroundColor = '#000000';
+      body.style.backgroundColor = '#000000';
+      body.classList.remove('bg-[#0B0F19]', 'bg-slate-50', 'text-slate-900');
+      body.classList.add('bg-black', 'text-white');
+    } else {
+      root.classList.add('theme-navy');
+      root.classList.remove('theme-black');
       root.style.backgroundColor = '#0B0F19';
       body.style.backgroundColor = '#0B0F19';
-      body.classList.remove('bg-slate-50', 'text-slate-900');
+      body.classList.remove('bg-black', 'bg-slate-50', 'text-slate-900');
       body.classList.add('bg-[#0B0F19]', 'text-slate-100');
-    } else {
-      root.classList.add('light');
-      root.classList.remove('dark');
-      root.style.colorScheme = 'light';
-      root.style.backgroundColor = '#F8FAFC';
-      body.style.backgroundColor = '#F8FAFC';
-      body.classList.remove('bg-[#0B0F19]', 'text-slate-100');
-      body.classList.add('bg-slate-50', 'text-slate-900');
     }
 
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
-      metaThemeColor.setAttribute('content', mode === 'dark' ? '#0B0F19' : '#F8FAFC');
+      metaThemeColor.setAttribute('content', mode === 'black' ? '#000000' : '#0B0F19');
     }
 
     try {
@@ -74,7 +81,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [theme]);
 
   const toggleTheme = () => {
-    setThemeState((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    setThemeState((prev) => (prev === 'navy' ? 'black' : 'navy'));
   };
 
   const setTheme = (newTheme: ThemeMode) => {
@@ -82,7 +89,15 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, isDark: theme === 'dark', toggleTheme, setTheme }}>
+    <ThemeContext.Provider
+      value={{
+        theme,
+        isDark: true, // both Classic Navy and Pure Black are dark gaming themes
+        isPureBlack: theme === 'black',
+        toggleTheme,
+        setTheme,
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   );

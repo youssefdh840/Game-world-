@@ -92,9 +92,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   soundEnabled,
   setSoundEnabled,
 }) => {
-  const { logout, firebaseUser, updateProfile } = useAuth();
-  const { isDark } = useTheme();
+  const { logout, firebaseUser, updateProfile, isAuthenticated } = useAuth();
+  const { theme, isDark, isPureBlack, toggleTheme } = useTheme();
   const [liveUser, setLiveUser] = useState<UserProfile>(user);
+
+  const handleToggleTheme = () => {
+    sounds.playPop();
+    toggleTheme();
+  };
   const [isEditing, setIsEditing] = useState(false);
   const [username, setUsername] = useState(user.username);
   const [avatar, setAvatar] = useState(user.avatar);
@@ -248,17 +253,34 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* Profile Card Header */}
       <div
         className={`relative overflow-hidden rounded-3xl p-5 sm:p-7 md:p-8 shadow-xl text-center transition-colors duration-300 ${
-          isDark
-            ? 'bg-slate-800/80 border border-slate-700/60'
-            : 'bg-white/90 border border-slate-200/90 shadow-md'
+          isPureBlack
+            ? 'bg-black border border-neutral-800 shadow-[0_0_35px_rgba(0,0,0,0.95)]'
+            : 'bg-slate-800/80 border border-slate-700/60 shadow-xl'
         }`}
       >
         {/* Glow backdrop */}
         <div
           className={`absolute -top-10 -right-10 w-36 h-36 rounded-full blur-2xl pointer-events-none transition-colors duration-500 ${
-            isDark ? 'bg-cyan-500/10' : 'bg-amber-400/20'
+            isPureBlack ? 'bg-emerald-500/10' : 'bg-cyan-500/10'
           }`}
         />
+
+        {/* Quick Top-Right Theme Toggle Button */}
+        <button
+          type="button"
+          onClick={handleToggleTheme}
+          title={isPureBlack ? 'Switch to Classic Navy' : 'Switch to Pure OLED Black'}
+          className={`absolute top-4 right-4 z-20 px-3 py-1.5 rounded-2xl border transition-all duration-300 cursor-pointer active:scale-95 flex items-center gap-1.5 shadow-sm select-none ${
+            isPureBlack
+              ? 'bg-black hover:bg-neutral-950 border-emerald-400/50 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.3)] ring-1 ring-emerald-400/30'
+              : 'bg-slate-900/90 hover:bg-slate-900 border-cyan-500/40 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+          }`}
+        >
+          <span className="text-xs">{isPureBlack ? '🖤' : '🌌'}</span>
+          <span className="text-[11px] font-black uppercase tracking-wider">
+            {isPureBlack ? 'OLED Black' : 'Classic Navy'}
+          </span>
+        </button>
 
         {/* Hidden File Input for Direct Avatar Upload */}
         <input
@@ -274,9 +296,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             src={isEditing ? avatar || liveUser.avatar : liveUser.avatar}
             alt={liveUser.username}
             className={`w-20 h-20 sm:w-24 sm:h-24 mx-auto rounded-3xl object-cover ring-2 shadow-xl ${
-              isDark
-                ? 'ring-indigo-500/50 bg-slate-900'
-                : 'ring-amber-400/60 bg-slate-100'
+              isPureBlack
+                ? 'ring-emerald-500/50 bg-black'
+                : 'ring-cyan-500/50 bg-slate-900'
             }`}
           />
           <button
@@ -287,7 +309,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             className="absolute inset-0 rounded-3xl bg-slate-950/60 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity flex flex-col items-center justify-center text-white cursor-pointer"
           >
             {avatarUploading ? (
-              <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+              <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
             ) : (
               <>
                 <Camera className="w-6 h-6 text-white drop-shadow" />
@@ -300,7 +322,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             onClick={() => fileInputRef.current?.click()}
             disabled={avatarUploading}
             title="Upload custom profile picture"
-            className="absolute -top-1.5 -right-1.5 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-indigo-600 hover:bg-indigo-500 border-2 border-slate-900 text-white flex items-center justify-center shadow-lg transition-transform active:scale-95 cursor-pointer"
+            className={`absolute -top-1.5 -right-1.5 w-7 h-7 sm:w-8 sm:h-8 rounded-full text-white flex items-center justify-center shadow-lg transition-transform active:scale-95 cursor-pointer border-2 ${
+              isPureBlack
+                ? 'bg-emerald-600 hover:bg-emerald-500 border-black'
+                : 'bg-indigo-600 hover:bg-indigo-500 border-slate-900'
+            }`}
           >
             {avatarUploading ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
@@ -310,42 +336,48 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </button>
           <span
             className={`absolute -bottom-1 -right-1 text-2xl p-0.5 rounded-full shadow pointer-events-none ${
-              isDark ? 'bg-slate-900' : 'bg-white'
+              isPureBlack ? 'bg-black' : 'bg-slate-900'
             }`}
           >
             {liveUser.countryFlag}
           </span>
         </div>
 
-        <h2 className={`text-xl sm:text-2xl font-black ${isDark ? 'text-white' : 'text-slate-950'}`}>
+        <h2 className="text-xl sm:text-2xl font-black text-white">
           {liveUser.username}
         </h2>
-        <p className={`text-xs sm:text-sm font-semibold mt-1 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+        <p className="text-xs sm:text-sm font-semibold mt-1 text-slate-300">
           {liveUser.countryName} • {liveUser.preferredLanguage || 'English'}
         </p>
-        <p
-          className={`text-xs sm:text-sm mt-2 max-w-md mx-auto italic leading-relaxed ${
-            isDark ? 'text-slate-400' : 'text-slate-500'
-          }`}
-        >
+        <p className="text-xs sm:text-sm mt-2 max-w-md mx-auto italic leading-relaxed text-slate-400">
           "{liveUser.bio || 'World Challenge traveler ready for cultural duels!'}"
         </p>
 
         {/* Level & XP */}
-        <div className={`mt-5 pt-4 border-t max-w-xl mx-auto ${isDark ? 'border-slate-700/60' : 'border-slate-200'}`}>
+        <div
+          className={`mt-5 pt-4 border-t max-w-xl mx-auto ${
+            isPureBlack ? 'border-neutral-800' : 'border-slate-700/60'
+          }`}
+        >
           <div className="flex justify-between items-center text-xs sm:text-sm mb-1.5 font-bold">
-            <span className="text-indigo-400 font-black">Level {levelInfo.level}</span>
-            <span className={`font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            <span className={isPureBlack ? 'text-emerald-400 font-black' : 'text-cyan-400 font-black'}>
+              Level {levelInfo.level}
+            </span>
+            <span className="font-mono text-slate-400">
               {levelInfo.xpInCurrentLevel} / {levelInfo.nextLevelThreshold - levelInfo.currentLevelBase} XP ({liveUser.xp || 0} Total XP)
             </span>
           </div>
           <div
             className={`w-full h-3 rounded-full overflow-hidden p-0.5 border ${
-              isDark ? 'bg-slate-900 border-slate-700/50' : 'bg-slate-100 border-slate-200'
+              isPureBlack ? 'bg-black border-neutral-800' : 'bg-slate-900 border-slate-700/50'
             }`}
           >
             <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-500"
+              className={`h-full rounded-full ${
+                isPureBlack
+                  ? 'bg-gradient-to-r from-emerald-500 via-cyan-500 to-teal-400'
+                  : 'bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-500'
+              }`}
               style={{ width: `${Math.max(5, levelInfo.progressPercent)}%` }}
             />
           </div>
@@ -358,15 +390,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             setIsEditing(!isEditing);
           }}
           className={`mt-5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold px-4 py-2 rounded-xl cursor-pointer transition-colors border ${
-            isDark
-              ? 'text-indigo-400 hover:text-indigo-300 bg-slate-900 border-slate-700'
-              : 'text-indigo-600 hover:text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
+            isPureBlack
+              ? 'text-emerald-400 hover:text-emerald-300 bg-black border-neutral-800 hover:border-neutral-700'
+              : 'text-cyan-400 hover:text-cyan-300 bg-slate-900 border-slate-700 hover:border-slate-600'
           }`}
         >
           <Edit2 className="w-3.5 h-3.5" />
           <span>{isEditing ? 'Cancel Editing' : 'Edit Profile'}</span>
         </button>
       </div>
+
+      {/* Theme Toggle Switch Panel (Appearance & Aesthetics) at Top of Profile */}
+      <ThemeToggleCard />
 
       {savedSuccess && (
         <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs sm:text-sm rounded-2xl text-center">
@@ -567,24 +602,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4">
         <div
           className={`border rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg transition-colors ${
-            isDark ? 'bg-slate-800/80 border-slate-700/60' : 'bg-white/90 border-slate-200/80 shadow-md'
+            isPureBlack
+              ? 'bg-black border-neutral-800 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
+              : 'bg-slate-800/80 border-slate-700/60'
           }`}
         >
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">Games Played</span>
             <Gamepad2 className="w-4 h-4 text-sky-400 shrink-0" />
           </div>
-          <span className={`text-2xl sm:text-3xl font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>
+          <span className="text-2xl sm:text-3xl font-black text-white">
             {totalGamesPlayed}
           </span>
-          <span className={`text-[10px] sm:text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+          <span className="text-[10px] sm:text-xs mt-1 text-slate-400">
             Total duels &amp; quests
           </span>
         </div>
 
         <div
           className={`border rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg transition-colors ${
-            isDark ? 'bg-slate-800/80 border-slate-700/60' : 'bg-white/90 border-slate-200/80 shadow-md'
+            isPureBlack
+              ? 'bg-black border-neutral-800 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
+              : 'bg-slate-800/80 border-slate-700/60'
           }`}
         >
           <div className="flex items-center justify-between text-slate-400 mb-2">
@@ -592,14 +631,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <Trophy className="w-4 h-4 text-amber-400 shrink-0" />
           </div>
           <span className="text-2xl sm:text-3xl font-black text-amber-400">{totalVictories}</span>
-          <span className={`text-[10px] sm:text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+          <span className="text-[10px] sm:text-xs mt-1 text-slate-400">
             {winRate}% win rate
           </span>
         </div>
 
         <div
           className={`border rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg transition-colors ${
-            isDark ? 'bg-slate-800/80 border-slate-700/60' : 'bg-white/90 border-slate-200/80 shadow-md'
+            isPureBlack
+              ? 'bg-black border-neutral-800 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
+              : 'bg-slate-800/80 border-slate-700/60'
           }`}
         >
           <div className="flex items-center justify-between text-slate-400 mb-2">
@@ -609,14 +650,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <span className="text-2xl sm:text-3xl font-black text-emerald-400">
             {liveUser.discoveredCountries?.length || 1}
           </span>
-          <span className={`text-[10px] sm:text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+          <span className="text-[10px] sm:text-xs mt-1 text-slate-400">
             Country visas stamped
           </span>
         </div>
 
         <div
           className={`border rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-lg transition-colors ${
-            isDark ? 'bg-slate-800/80 border-slate-700/60' : 'bg-white/90 border-slate-200/80 shadow-md'
+            isPureBlack
+              ? 'bg-black border-neutral-800 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
+              : 'bg-slate-800/80 border-slate-700/60'
           }`}
         >
           <div className="flex items-center justify-between text-slate-400 mb-2">
@@ -624,18 +667,26 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <Flame className="w-4 h-4 text-amber-400 shrink-0" />
           </div>
           <span className="text-2xl sm:text-3xl font-black text-amber-400">{liveUser.dailyStreak || 1}</span>
-          <span className={`text-[10px] sm:text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+          <span className="text-[10px] sm:text-xs mt-1 text-slate-400">
             Days in a row
           </span>
         </div>
       </div>
 
       {/* Badges & Achievements Showcase */}
-      <div className="bg-slate-800/80 border border-slate-700/60 rounded-3xl p-5 sm:p-6 md:p-7 shadow-xl">
+      <div
+        className={`rounded-3xl p-5 sm:p-6 md:p-7 shadow-xl transition-colors duration-200 border ${
+          isPureBlack
+            ? 'bg-black border-neutral-800 shadow-[0_0_24px_rgba(0,0,0,0.85)]'
+            : 'bg-slate-800/80 border-slate-700/60'
+        }`}
+      >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Award className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
-            <h3 className="text-sm sm:text-base font-extrabold text-white">Achievements &amp; Badges</h3>
+            <h3 className="text-sm sm:text-base font-extrabold text-white">
+              Achievements &amp; Badges
+            </h3>
           </div>
           <span className="text-xs sm:text-sm font-mono font-bold text-amber-400">
             {unlockedBadgeIds.size} / {BADGES.length}
@@ -651,26 +702,40 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 key={badge.id}
                 className={`p-3.5 sm:p-4 rounded-2xl border flex items-center justify-between text-xs sm:text-sm transition-colors ${
                   isUnlocked
-                    ? 'bg-slate-800/80 border-amber-500/30 text-white'
-                    : 'bg-slate-900/40 border-slate-800/60 text-slate-500 opacity-60'
+                    ? isPureBlack
+                      ? 'bg-neutral-950 border-amber-500/35 text-white'
+                      : 'bg-slate-800/80 border-amber-500/30 text-white'
+                    : isPureBlack
+                      ? 'bg-black/60 border-neutral-900 text-neutral-500 opacity-60'
+                      : 'bg-slate-900/40 border-slate-800/60 text-slate-500 opacity-60'
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div
                     className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${
-                      isUnlocked ? 'bg-amber-500/20' : 'bg-slate-800'
+                      isUnlocked
+                        ? isPureBlack
+                          ? 'bg-amber-500/20 text-amber-400'
+                          : 'bg-amber-500/20 text-amber-400'
+                        : isPureBlack
+                          ? 'bg-neutral-900 text-neutral-600'
+                          : 'bg-slate-800 text-slate-600'
                     }`}
                   >
                     {badge.icon}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-extrabold text-white truncate">{badge.title}</span>
+                      <span className="font-extrabold truncate text-white">
+                        {badge.title}
+                      </span>
                       {isUnlocked && (
                         <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                       )}
                     </div>
-                    <p className="text-[11px] sm:text-xs text-slate-400 leading-snug">{badge.description}</p>
+                    <p className="text-[11px] sm:text-xs leading-snug text-slate-400">
+                      {badge.description}
+                    </p>
                   </div>
                 </div>
 
@@ -684,10 +749,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       </div>
 
       {/* Account Settings & Preferences */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 space-y-4 shadow-xl">
+      <div
+        className={`rounded-3xl p-5 sm:p-6 space-y-4 shadow-xl transition-colors duration-200 border ${
+          isPureBlack
+            ? 'bg-black border-neutral-800 shadow-[0_0_24px_rgba(0,0,0,0.85)]'
+            : 'bg-slate-900 border-slate-800'
+        }`}
+      >
         {/* Sound toggle button */}
         <div className="flex items-center justify-between py-1">
-          <div className="flex items-center gap-2.5 text-xs sm:text-sm text-slate-300 font-semibold">
+          <div className="flex items-center gap-2.5 text-xs sm:text-sm font-semibold text-slate-300">
             {soundEnabled ? (
               <Volume2 className="w-4 h-4 text-emerald-400" />
             ) : (
@@ -700,7 +771,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
               soundEnabled
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'bg-slate-800 text-slate-400'
+                : isPureBlack
+                  ? 'bg-neutral-900 text-slate-400 border border-neutral-800'
+                  : 'bg-slate-800 text-slate-400'
             }`}
           >
             {soundEnabled ? 'Enabled' : 'Muted'}
@@ -708,12 +781,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         </div>
 
         {/* Auth / Logout / Login */}
-        <div className="pt-3 border-t border-slate-800">
-          {firebaseUser && !firebaseUser.isAnonymous ? (
+        <div className={`pt-3 border-t ${isPureBlack ? 'border-neutral-800' : 'border-slate-800'}`}>
+          {isAuthenticated ? (
             <div className="space-y-3">
-              <div className="flex items-center justify-center text-xs sm:text-sm text-slate-300 bg-slate-950/60 px-4 py-3.5 rounded-2xl border border-slate-800">
-                <span className="font-bold text-white truncate">
-                  {liveUser.username || firebaseUser.displayName || firebaseUser.email}
+              <div
+                className={`flex items-center justify-center text-xs sm:text-sm px-4 py-3.5 rounded-2xl border ${
+                  isPureBlack
+                    ? 'text-slate-300 bg-neutral-950 border-neutral-800'
+                    : 'text-slate-300 bg-slate-950/60 border-slate-800'
+                }`}
+              >
+                <span className="font-bold truncate text-white">
+                  {liveUser.username || firebaseUser?.displayName || firebaseUser?.email || 'Authenticated Explorer'}
                 </span>
               </div>
               <button
@@ -721,7 +800,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   sounds.playPop();
                   logout();
                 }}
-                className="w-full py-3 rounded-xl bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                className={`w-full py-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer ${
+                  isPureBlack
+                    ? 'bg-neutral-900 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300 border border-neutral-800'
+                    : 'bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300'
+                }`}
               >
                 <LogOut className="w-4 h-4" />
                 <span>Sign Out of Account</span>
@@ -729,9 +812,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="bg-indigo-950/40 border border-indigo-500/30 p-4 rounded-2xl">
-                <span className="text-xs sm:text-sm font-bold text-indigo-300 block mb-0.5">Playing in Guest Mode</span>
-                <p className="text-[11px] sm:text-xs text-slate-400 leading-relaxed">
+              <div
+                className={`p-4 rounded-2xl border ${
+                  isPureBlack
+                    ? 'bg-neutral-950 border-cyan-500/30'
+                    : 'bg-indigo-950/40 border-indigo-500/30'
+                }`}
+              >
+                <span className="text-xs sm:text-sm font-bold block mb-0.5 text-cyan-300">
+                  Playing in Guest Mode
+                </span>
+                <p className="text-[11px] sm:text-xs leading-relaxed text-slate-400">
                   Log in or create a free account to permanently save your progress, coins, country stamps, and rank.
                 </p>
               </div>
@@ -757,10 +848,20 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           target="_blank"
           rel="noopener noreferrer"
           onClick={() => sounds.playPop()}
-          className="group inline-flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-slate-900/90 hover:bg-slate-900 border border-slate-800 hover:border-slate-600 shadow-lg transition-all active:scale-95 cursor-pointer"
+          className={`group inline-flex items-center gap-3 px-4 py-2.5 rounded-2xl shadow-lg transition-all active:scale-95 cursor-pointer ${
+            isPureBlack
+              ? 'bg-black hover:bg-neutral-950 border border-neutral-800 hover:border-neutral-700'
+              : 'bg-slate-900/90 hover:bg-slate-900 border border-slate-800 hover:border-slate-600'
+          }`}
         >
           {/* Diamond-Crowned Instagram Icon Badge */}
-          <div className="w-9 h-9 rounded-xl bg-black border border-slate-700/80 group-hover:border-white/40 flex items-center justify-center shadow-md overflow-hidden shrink-0 transition-colors">
+          <div
+            className={`w-9 h-9 rounded-xl border flex items-center justify-center shadow-md overflow-hidden shrink-0 transition-colors ${
+              isPureBlack
+                ? 'bg-black border-neutral-800 group-hover:border-neutral-600'
+                : 'bg-black border-slate-700/80 group-hover:border-white/40'
+            }`}
+          >
             <svg
               viewBox="0 0 64 64"
               className="w-7 h-7"
@@ -827,10 +928,21 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </div>
 
           <div className="text-left">
-            <span className="text-xs font-extrabold text-slate-200 group-hover:text-white tracking-wide transition-colors">
-              Created by <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-amber-300 font-black">nefzaouiassil</span>
+            <span
+              className={`text-xs font-extrabold tracking-wide transition-colors ${
+                isDark ? 'text-slate-200 group-hover:text-white' : 'text-slate-800 group-hover:text-slate-950'
+              }`}
+            >
+              Created by{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 via-rose-500 to-amber-500 font-black">
+                nefzaouiassil
+              </span>
             </span>
-            <span className="block text-[10px] text-slate-400 group-hover:text-slate-300">
+            <span
+              className={`block text-[10px] ${
+                isDark ? 'text-slate-400 group-hover:text-slate-300' : 'text-slate-500 group-hover:text-slate-700'
+              }`}
+            >
               @nefzaouiassil • Instagram
             </span>
           </div>

@@ -30,7 +30,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onOpenDailyChallenge,
   onOpenAuth,
 }) => {
-  const { userProfile, firebaseUser } = useAuth();
+  const { userProfile, isGuest } = useAuth();
 
   const levelInfo = calculateLevel(userProfile?.xp || 0);
   const discoveredCount = userProfile?.discoveredCountries?.length || 1;
@@ -68,7 +68,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     LVL {levelInfo.level}
                   </span>
 
-                  {(!firebaseUser || firebaseUser.isAnonymous) && (
+                  {isGuest && (
                     <button
                       onClick={() => {
                         sounds.playPop();
@@ -148,13 +148,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     🎮
                   </div>
                   <div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center">
                       <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider bg-cyan-500/15 text-cyan-300 px-2.5 py-0.5 rounded-md border border-cyan-500/30">
                         MULTIPLAYER ARENA
-                      </span>
-                      <span className="flex h-2 w-2 relative">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                       </span>
                     </div>
                     <h3 className="text-2xl sm:text-3xl font-black tracking-tight mt-0.5">PLAY NOW</h3>

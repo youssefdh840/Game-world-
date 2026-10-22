@@ -35,25 +35,28 @@
         width: 100%;
         touch-action: pan-y;
       }
-      html.light, html.light body, html.light #root {
-        background-color: #F8FAFC !important;
-        color: #0F172A !important;
+      html.theme-black, html.theme-black body, html.theme-black #root {
+        background-color: #000000 !important;
+        color: #FFFFFF !important;
       }
     </style>
     <script>
       (function() {
         try {
           var saved = localStorage.getItem('mapia_theme');
-          if (saved === 'light') {
-            document.documentElement.classList.remove('dark');
-            document.documentElement.classList.add('light');
-            document.documentElement.style.colorScheme = 'light';
-            document.documentElement.style.backgroundColor = '#F8FAFC';
+          var isBlack = saved === 'black' || saved === 'pure_black';
+          var root = document.documentElement;
+          root.classList.add('dark');
+          root.classList.remove('light');
+          root.style.colorScheme = 'dark';
+          if (isBlack) {
+            root.classList.add('theme-black');
+            root.classList.remove('theme-navy');
+            root.style.backgroundColor = '#000000';
           } else {
-            document.documentElement.classList.add('dark');
-            document.documentElement.classList.remove('light');
-            document.documentElement.style.colorScheme = 'dark';
-            document.documentElement.style.backgroundColor = '#0B0F19';
+            root.classList.add('theme-navy');
+            root.classList.remove('theme-black');
+            root.style.backgroundColor = '#0B0F19';
           }
         } catch (e) {}
       })();

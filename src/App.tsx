@@ -20,7 +20,7 @@ import { sounds } from './services/soundEffects';
 
 function AppContent() {
   const { userProfile, loading } = useAuth();
-  const { isDark } = useTheme();
+  const { isDark, isPureBlack } = useTheme();
 
   const [currentTab, setCurrentTabState] = useState<
     'home' | 'explore' | 'play' | 'passport' | 'profile' | 'leaderboard'
@@ -183,19 +183,19 @@ function AppContent() {
   return (
     <div
       className={`min-h-[100dvh] w-full ${
-        isDark ? 'bg-[#0B0F19] text-slate-100' : 'bg-slate-50 text-slate-900'
+        isPureBlack ? 'bg-black text-white' : 'bg-[#0B0F19] text-slate-100'
       } selection:bg-cyan-500 selection:text-slate-950 flex flex-col relative overflow-x-hidden transition-colors duration-300`}
     >
       {/* Subtle Atmospheric Grid & Explorer Depth */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
         <div
           className={`absolute -top-40 left-1/3 w-[600px] h-[600px] rounded-full blur-[120px] pointer-events-none transition-colors duration-500 ${
-            isDark ? 'bg-cyan-500/[0.035]' : 'bg-amber-400/[0.06]'
+            isPureBlack ? 'bg-emerald-500/[0.04]' : 'bg-cyan-500/[0.035]'
           }`}
         />
         <div
           className={`absolute -bottom-40 right-1/4 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none transition-colors duration-500 ${
-            isDark ? 'bg-teal-500/[0.03]' : 'bg-indigo-400/[0.05]'
+            isPureBlack ? 'bg-cyan-500/[0.03]' : 'bg-teal-500/[0.03]'
           }`}
         />
       </div>
@@ -208,6 +208,7 @@ function AppContent() {
         setSoundEnabled={setSoundEnabled}
         onOpenLeaderboard={() => setCurrentTab('leaderboard')}
         onOpenAuth={() => setIsAuthOpen(true)}
+        onNavigateProfile={() => setCurrentTab('profile')}
       />
 
       {/* Main Content Area: Responsive Container across Mobile, Tablet, and Desktop */}

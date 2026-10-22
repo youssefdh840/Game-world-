@@ -26,8 +26,7 @@ export const PlayScreen: React.FC<PlayScreenProps> = ({ onStartMatch }) => {
             <Swords className="w-4 h-4 text-cyan-400" />
             <span>MULTIPLAYER ARENA</span>
           </div>
-          <span className="text-[10px] sm:text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-full flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-[10px] sm:text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-full inline-flex items-center justify-center">
             Live Queue Online
           </span>
         </div>
