@@ -23,6 +23,7 @@ import {
   subscribeToFallbackRoom,
   initHostPeer,
   joinGuestPeer,
+  initQueueLobbyPeer,
   joinFallbackQueue as joinFallbackQueueService,
   leaveFallbackQueue as leaveFallbackQueueService,
   broadcastFallbackMessage,
@@ -30,6 +31,28 @@ import {
 
 const DEFAULT_AVATAR =
   'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=160&q=80';
+
+/**
+ * Executes a promise with a strict timeout so Firestore network hangs never freeze the application UI.
+ */
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number = 2000,
+  fallbackValue?: T
+): Promise<T> {
+  let timer: any;
+  const timeoutPromise = new Promise<T>((resolve, reject) => {
+    timer = setTimeout(() => {
+      if (fallbackValue !== undefined) resolve(fallbackValue);
+      else reject(new Error(`Operation timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Strips any `undefined` properties from an object before passing to Firestore `setDoc` or `updateDoc`.
@@ -71,7 +94,7 @@ export async function ensureFirebaseAuth(): Promise<string> {
     return current.uid;
   }
   try {
-    const cred = await signInAnonymously(auth);
+    const cred = await withTimeout(signInAnonymously(auth), 1800);
     return cred.user.uid;
   } catch (err) {
     console.warn('Anonymous auth auto-fallback notice:', err);
@@ -81,23 +104,23 @@ export async function ensureFirebaseAuth(): Promise<string> {
 }
 
 /**
- * Ensures Firebase Auth has an active user and returns a complete, non-undefined player identity.
+ * Ensures Firebase Auth has an active user and returns an instantaneous, non-undefined player identity.
  */
-async function ensurePlayerIdentity(user?: Partial<UserProfile>): Promise<{
+function ensurePlayerIdentity(user?: Partial<UserProfile>): {
   uid: string;
   username: string;
   avatar: string;
   countryCode: string;
   countryFlag: string;
   level: number;
-}> {
-  await ensureFirebaseAuth();
+} {
+  ensureFirebaseAuth().catch(() => {});
 
   const uid =
     auth.currentUser?.uid ||
     user?.uid ||
     (user as { id?: string } | undefined)?.id ||
-    `player_${Date.now().toString(36)}`;
+    `player_${getClientSessionId()}`;
 
   const username =
     (user?.username && user.username.trim()) ||
@@ -109,7 +132,7 @@ async function ensurePlayerIdentity(user?: Partial<UserProfile>): Promise<{
     auth.currentUser?.photoURL ||
     DEFAULT_AVATAR;
 
-  const geo = await detectUserCountry().catch(() => getSyncDetectedCountry());
+  const geo = getSyncDetectedCountry();
   const rawCode = (user?.countryCode && user.countryCode.trim()) || geo.countryCode || 'TN';
   const resolvedCountry = getCountryByCode(rawCode);
   const countryCode = resolvedCountry?.code || rawCode.toUpperCase();
@@ -156,8 +179,7 @@ export async function joinMatchmakingQueue(
   preferredCategory: GameCategory | 'mixed' = 'cultural_quiz',
   targetCountryCode?: string
 ): Promise<JoinQueueResult> {
-  await ensureFirebaseAuth();
-  const player = await ensurePlayerIdentity(user);
+  const player = ensurePlayerIdentity(user);
   const mySessionId = getClientSessionId();
   const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
 
@@ -169,64 +191,60 @@ export async function joinMatchmakingQueue(
   };
   const requestedModeGroup = normalizeMode(preferredCategory);
 
-  // 1. Check if another real player already has an open waiting room in Firestore gameRooms
+  // 1. Check if another real player already has an open waiting room in Firestore gameRooms (with strict 1500ms timeout)
   try {
     const q = query(
       collection(db, 'gameRooms'),
       where('status', '==', 'waiting')
     );
-    const snap = await getDocs(q);
+    const snap = await withTimeout(getDocs(q), 1500, null);
 
-    // Find a valid waiting room created by another real player (not our tab session, not already joined, not expired)
-    const openRooms = snap.docs
-      .map((d) => ({ ...(d.data() as GameRoom), id: d.id }))
-      .filter((r) => {
-        if (!r.id || !r.hostId) return false;
-        const isMyRoom = r.hostSessionId ? r.hostSessionId === mySessionId : r.hostId === player.uid;
-        if (isMyRoom) return false;
-        if (r.guestId && r.guestId !== '') return false;
-        const createdMs = new Date(r.createdAt).getTime();
-        if (isNaN(createdMs) || createdMs < threeMinutesAgo) return false;
-        return normalizeMode(r.gameMode) === requestedModeGroup;
-      });
+    if (snap && !snap.empty) {
+      const openRooms = snap.docs
+        .map((d) => ({ ...(d.data() as GameRoom), id: d.id }))
+        .filter((r) => {
+          if (!r.id || !r.hostId) return false;
+          const isMyRoom = r.hostSessionId ? r.hostSessionId === mySessionId : r.hostId === player.uid;
+          if (isMyRoom) return false;
+          if (r.guestId && r.guestId !== '') return false;
+          const createdMs = new Date(r.createdAt).getTime();
+          if (isNaN(createdMs) || createdMs < threeMinutesAgo) return false;
+          return normalizeMode(r.gameMode) === requestedModeGroup;
+        });
 
-    if (openRooms.length > 0) {
-      // Pick the first available open waiting room
-      const waitingRoom = openRooms[0];
-      const now = Date.now();
+      if (openRooms.length > 0) {
+        const waitingRoom = openRooms[0];
+        const now = Date.now();
 
-      const updates: Partial<GameRoom> = sanitizeFirestorePayload({
-        guestId: player.uid,
-        guestSessionId: mySessionId,
-        guestUsername: player.username,
-        guestCountryCode: player.countryCode,
-        guestCountryFlag: player.countryFlag,
-        guestAvatar: player.avatar,
-        guestScore: 0,
-        guestReady: true,
-        status: 'starting' as const,
-        roundStartedAt: now,
-        roundStartTime: now,
-        updatedAt: new Date().toISOString(),
-      });
+        const updates: Partial<GameRoom> = sanitizeFirestorePayload({
+          guestId: player.uid,
+          guestSessionId: mySessionId,
+          guestUsername: player.username,
+          guestCountryCode: player.countryCode,
+          guestCountryFlag: player.countryFlag,
+          guestAvatar: player.avatar,
+          guestScore: 0,
+          guestReady: true,
+          status: 'starting' as const,
+          roundStartedAt: now,
+          roundStartTime: now,
+          updatedAt: new Date().toISOString(),
+        });
 
-      // Join the room as guest and advance status to 'starting'
-      await updateDoc(doc(db, 'gameRooms', waitingRoom.id), updates as Record<string, unknown>);
-      try {
-        await updateDoc(doc(db, 'rooms', waitingRoom.id), updates as Record<string, unknown>);
-      } catch {
-        // non-fatal
+        // Non-blocking background Firestore updates
+        withTimeout(updateDoc(doc(db, 'gameRooms', waitingRoom.id), updates as Record<string, unknown>), 1800).catch(() => {});
+        updateDoc(doc(db, 'rooms', waitingRoom.id), updates as Record<string, unknown>).catch(() => {});
+
+        const matchedRoom: GameRoom = { ...waitingRoom, ...updates };
+        saveFallbackRoom(matchedRoom, true);
+
+        return {
+          roomId: waitingRoom.id,
+          isHost: false,
+          matchedRoom,
+          unsubscribe: () => {},
+        };
       }
-
-      const matchedRoom: GameRoom = { ...waitingRoom, ...updates };
-      saveFallbackRoom(matchedRoom, true);
-
-      return {
-        roomId: waitingRoom.id,
-        isHost: false,
-        matchedRoom,
-        unsubscribe: () => {},
-      };
     }
   } catch (err) {
     console.warn('Firestore queue search notice, checking fallback queue:', err);
@@ -247,16 +265,11 @@ export async function joinMatchmakingQueue(
         unsubscribe: () => {},
       };
     }
-    // If fallback created our own waiting room, we mirror to Firestore asynchronously
     const roomId = fallbackResult.roomId;
     const waitingRoom = getFallbackRoom(roomId);
     if (waitingRoom) {
-      try {
-        await setDoc(doc(db, 'gameRooms', roomId), waitingRoom);
-        setDoc(doc(db, 'rooms', roomId), waitingRoom).catch(() => {});
-      } catch {
-        // non-fatal
-      }
+      withTimeout(setDoc(doc(db, 'gameRooms', roomId), waitingRoom), 1800).catch(() => {});
+      setDoc(doc(db, 'rooms', roomId), waitingRoom).catch(() => {});
     }
     return {
       roomId,
@@ -271,7 +284,7 @@ export async function joinMatchmakingQueue(
     console.warn('Fallback queue notice:', err);
   }
 
-  // 3. Ultimate safe fallback waiting room creation
+  // 3. Ultimate safe fallback waiting room creation (instant!)
   const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const roundCount = preferredCategory === 'memory_match' ? 1 : preferredCategory === 'guess_number' ? 3 : 5;
   const questions = await fetchDynamicGameQuestions({
@@ -312,19 +325,16 @@ export async function joinMatchmakingQueue(
     currentQuestion: questions[0],
     roundStartedAt: now,
     roundStartTime: now,
-    isBotOpponent: false, // REAL PLAYERS ONLY
+    isBotOpponent: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }) as unknown as GameRoom;
 
   saveFallbackRoom(roomData, true);
 
-  try {
-    await setDoc(doc(db, 'gameRooms', roomId), roomData);
-    setDoc(doc(db, 'rooms', roomId), roomData).catch(() => {});
-  } catch (error) {
+  withTimeout(setDoc(doc(db, 'gameRooms', roomId), roomData), 1800).catch((error) => {
     console.warn('Could not create waiting game room in Firestore (fallback active):', error);
-  }
+  });
 
   return {
     roomId,
@@ -356,7 +366,17 @@ export function listenToMatchmakingRoom(
     }
   });
 
-  // 2. Primary snapshot listener on our waiting room in Firestore
+  // 2. Worldwide WebRTC Queue Lobby peer matching
+  let unsubLobby = () => {};
+  if (user) {
+    unsubLobby = initQueueLobbyPeer(preferredCategory, user, (matchedRoom) => {
+      if (isDone) return;
+      isDone = true;
+      onMatched(matchedRoom);
+    });
+  }
+
+  // 3. Primary snapshot listener on our waiting room in Firestore
   let unsubSnap = () => {};
   try {
     unsubSnap = onSnapshot(
@@ -379,8 +399,7 @@ export function listenToMatchmakingRoom(
     console.warn('Matchmaking snapshot listen err:', err);
   }
 
-  // 3. Active pairing loop (every 1.8 seconds): if another player entered and created a room concurrently,
-  // tie-break by ID so both players pair immediately instead of waiting indefinitely
+  // 4. Active pairing loop (every 1.5 seconds) protected with timeout
   const normalizeMode = (mode?: string) => {
     if (mode === 'word_scramble') return 'word_scramble';
     if (mode === 'guess_number') return 'guess_number';
@@ -396,8 +415,8 @@ export function listenToMatchmakingRoom(
     }
     try {
       const q = query(collection(db, 'gameRooms'), where('status', '==', 'waiting'));
-      const snap = await getDocs(q);
-      if (isDone) return;
+      const snap = await withTimeout(getDocs(q), 1200, null);
+      if (isDone || !snap) return;
 
       const otherOpenRooms = snap.docs
         .map((d) => ({ ...(d.data() as GameRoom), id: d.id }))
@@ -410,22 +429,13 @@ export function listenToMatchmakingRoom(
         });
 
       if (otherOpenRooms.length > 0) {
-        // Pick the oldest room, or if lower ID, become the guest
         const otherRoom = otherOpenRooms[0];
         if (otherRoom.id < roomId) {
           isDone = true;
           clearInterval(pollInterval);
 
           const now = Date.now();
-          const p = user
-            ? await ensurePlayerIdentity(user)
-            : {
-                uid: auth.currentUser?.uid || `guest_${mySessionId}`,
-                username: 'Challenger',
-                countryCode: 'TN',
-                countryFlag: '🌍',
-                avatar: DEFAULT_AVATAR,
-              };
+          const p = ensurePlayerIdentity(user);
 
           const updates: Partial<GameRoom> = sanitizeFirestorePayload({
             guestId: p.uid,
@@ -442,9 +452,8 @@ export function listenToMatchmakingRoom(
             updatedAt: new Date().toISOString(),
           });
 
-          // Join the other room
-          await updateDoc(doc(db, 'gameRooms', otherRoom.id), updates as Record<string, unknown>);
-          // Clean up our obsolete waiting room
+          // Join the other room asynchronously
+          withTimeout(updateDoc(doc(db, 'gameRooms', otherRoom.id), updates as Record<string, unknown>), 1800).catch(() => {});
           deleteDoc(doc(db, 'gameRooms', roomId)).catch(() => {});
           leaveFallbackQueueService(roomId);
 
@@ -456,12 +465,13 @@ export function listenToMatchmakingRoom(
     } catch {
       // non-fatal poll
     }
-  }, 1800);
+  }, 1500);
 
   return () => {
     isDone = true;
     clearInterval(pollInterval);
     unsubFallback();
+    unsubLobby();
     unsubSnap();
   };
 }
@@ -486,15 +496,15 @@ export async function leaveMatchmakingQueue(roomId: string) {
   if (!roomId) return;
   leaveFallbackQueueService(roomId);
   try {
-    const roomSnap = await getDoc(doc(db, 'gameRooms', roomId));
-    if (roomSnap.exists()) {
-      const data = roomSnap.data() as GameRoom;
-      // Only delete if still waiting with no guest
-      if (data.status === 'waiting' && (!data.guestId || data.guestId === '')) {
-        await deleteDoc(doc(db, 'gameRooms', roomId));
-        deleteDoc(doc(db, 'rooms', roomId)).catch(() => {});
+    withTimeout(getDoc(doc(db, 'gameRooms', roomId)), 1500).then((roomSnap) => {
+      if (roomSnap && roomSnap.exists()) {
+        const data = roomSnap.data() as GameRoom;
+        if (data.status === 'waiting' && (!data.guestId || data.guestId === '')) {
+          deleteDoc(doc(db, 'gameRooms', roomId)).catch(() => {});
+          deleteDoc(doc(db, 'rooms', roomId)).catch(() => {});
+        }
       }
-    }
+    }).catch(() => {});
   } catch {
     // Non-fatal
   }
@@ -518,9 +528,7 @@ export async function createPrivateDuelRoom(
   preferredCategory: GameCategory | 'mixed' = 'mixed',
   targetCountryCode?: string
 ): Promise<{ room: GameRoom; roomCode: string }> {
-  // 1. Ensure active Firebase Auth session (anonymous auth fallback for guest players)
-  await ensureFirebaseAuth();
-  const player = await ensurePlayerIdentity(user);
+  const player = ensurePlayerIdentity(user);
   const mySessionId = getClientSessionId();
   const roomCode = generateRoomCode();
   const roomId = `room_code_${roomCode}`;
@@ -564,44 +572,26 @@ export async function createPrivateDuelRoom(
     currentQuestion: questions[0],
     roundStartedAt: 0,
     roundStartTime: 0,
-    isBotOpponent: false, // NO BOTS
+    isBotOpponent: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }) as unknown as GameRoom;
 
-  // 1. Always persist to robust fallback storage (LocalStorage + BroadcastChannel) immediately
+  // 1. Immediately persist to fallback storage (instant local & peer broker)
   saveFallbackRoom(roomData, true);
 
-  // Helper to persist to gameRooms, rooms, and duels collections
+  // 2. Persist to Firestore asynchronously in background with timeout (never blocks UI!)
   const writeRoomData = async () => {
-    await setDoc(doc(db, 'gameRooms', roomId), roomData);
     try {
-      await setDoc(doc(db, 'rooms', roomId), roomData);
-      await setDoc(doc(db, 'duels', roomId), roomData);
-      // Support looking up directly by 6-digit code document ID as well
-      await setDoc(doc(db, 'rooms', roomCode), roomData);
-    } catch (auxErr) {
-      console.warn('Auxiliary rooms collection write note:', auxErr);
+      await withTimeout(setDoc(doc(db, 'gameRooms', roomId), roomData), 1800);
+      setDoc(doc(db, 'rooms', roomId), roomData).catch(() => {});
+      setDoc(doc(db, 'rooms', roomCode), roomData).catch(() => {});
+      setDoc(doc(db, 'duels', roomId), roomData).catch(() => {});
+    } catch (primaryErr) {
+      console.warn('Firestore room write notice (fallback active):', primaryErr);
     }
   };
-
-  try {
-    await writeRoomData();
-  } catch (primaryErr) {
-    console.warn('Firestore primary write notice, attempting anonymous auth recovery...', primaryErr);
-    try {
-      const anonCred = await signInAnonymously(auth);
-      if (anonCred.user.uid) {
-        roomData.hostId = anonCred.user.uid;
-      }
-      await writeRoomData();
-    } catch (retryErr) {
-      // DO NOT THROW AN ERROR UI BLOCKER!
-      // Gracefully continue using local storage & peer fallback
-      console.warn('Firestore write failed, seamlessly continuing with peer & storage fallback:', retryErr);
-      saveFallbackRoom(roomData, true);
-    }
-  }
+  writeRoomData().catch(() => {});
 
   return { room: roomData, roomCode };
 }
@@ -615,52 +605,43 @@ export async function joinPrivateDuelRoom(
     throw new Error('Please enter a valid 6-character room code.');
   }
 
-  // Ensure active Firebase Auth session (anonymous auth fallback for guest players)
-  await ensureFirebaseAuth();
-  const player = await ensurePlayerIdentity(user);
+  const player = ensurePlayerIdentity(user);
   const mySessionId = getClientSessionId();
   const roomId = `room_code_${cleanCode}`;
 
   let currentRoom: GameRoom | null = null;
 
-  // 1. First check local storage & in-memory fallback
+  // 1. First check local storage & in-memory fallback (instant!)
   const localRoom = getFallbackRoom(cleanCode);
   if (localRoom) {
     currentRoom = localRoom;
   }
 
-  // 2. Try Firestore lookup
+  // 2. Query Firestore AND WebRTC Peer in parallel with strict timeouts
   if (!currentRoom) {
-    const fetchRoomDoc = async () => {
-      let snap = await getDoc(doc(db, 'gameRooms', roomId));
-      if (snap.exists()) return snap;
-      snap = await getDoc(doc(db, 'rooms', roomId));
-      if (snap.exists()) return snap;
-      snap = await getDoc(doc(db, 'rooms', cleanCode));
-      if (snap.exists()) return snap;
-      return await getDoc(doc(db, 'duels', roomId));
+    const fetchFirestore = async (): Promise<GameRoom | null> => {
+      try {
+        const snap = await withTimeout(getDoc(doc(db, 'gameRooms', roomId)), 1800);
+        if (snap && snap.exists()) return { ...(snap.data() as GameRoom), id: snap.id };
+        const snap2 = await withTimeout(getDoc(doc(db, 'rooms', cleanCode)), 1500);
+        if (snap2 && snap2.exists()) return { ...(snap2.data() as GameRoom), id: snap2.id };
+      } catch (getErr) {
+        console.warn('Firestore room lookup notice, checking peer fallback:', getErr);
+      }
+      return null;
     };
 
-    try {
-      const snap = await fetchRoomDoc();
-      if (snap && snap.exists()) {
-        currentRoom = { ...(snap.data() as GameRoom), id: snap.id };
+    const fetchPeer = async (): Promise<GameRoom | null> => {
+      try {
+        return await withTimeout(joinGuestPeer(cleanCode, player), 2200);
+      } catch (peerErr) {
+        console.warn('WebRTC peer join notice:', peerErr);
+        return null;
       }
-    } catch (getErr) {
-      console.warn('Firestore room lookup notice, checking peer fallback:', getErr);
-    }
-  }
+    };
 
-  // 3. If still not found, try WebRTC direct peer connection (cross-device/network)
-  if (!currentRoom) {
-    try {
-      const peerRoom = await joinGuestPeer(cleanCode, player);
-      if (peerRoom) {
-        currentRoom = peerRoom;
-      }
-    } catch (peerErr) {
-      console.warn('WebRTC peer join notice:', peerErr);
-    }
+    const [fsRes, peerRes] = await Promise.all([fetchFirestore(), fetchPeer()]);
+    currentRoom = fsRes || peerRes || getFallbackRoom(cleanCode);
   }
 
   if (!currentRoom) {
@@ -671,7 +652,6 @@ export async function joinPrivateDuelRoom(
     throw new Error('This game match has already finished.');
   }
 
-  // If hostSessionId matches our tab session, we cannot join our own room in the exact same tab
   const isSameHostTab = currentRoom.hostSessionId
     ? currentRoom.hostSessionId === mySessionId
     : currentRoom.hostId === player.uid;
@@ -685,7 +665,6 @@ export async function joinPrivateDuelRoom(
 
   const now = Date.now();
 
-  // Join as guest — every field is guaranteed to be defined
   const updates: Partial<GameRoom> = sanitizeFirestorePayload({
     guestId: player.uid,
     guestSessionId: mySessionId,
@@ -703,7 +682,7 @@ export async function joinPrivateDuelRoom(
 
   const updatedRoom: GameRoom = { ...currentRoom, ...updates };
 
-  // Always update fallback storage & broadcast
+  // Always update fallback storage & broadcast immediately
   saveFallbackRoom(updatedRoom, true);
   broadcastFallbackMessage({
     type: 'GUEST_JOIN',
@@ -716,23 +695,18 @@ export async function joinPrivateDuelRoom(
     room: updatedRoom,
   });
 
-  // Also apply Firestore updates asynchronously
+  // Background update to Firestore with timeout
   const applyRoomUpdates = async () => {
-    await updateDoc(doc(db, 'gameRooms', roomId), updates as Record<string, unknown>);
     try {
-      await updateDoc(doc(db, 'rooms', roomId), updates as Record<string, unknown>);
-      await updateDoc(doc(db, 'rooms', cleanCode), updates as Record<string, unknown>);
-      await updateDoc(doc(db, 'duels', roomId), updates as Record<string, unknown>);
+      await withTimeout(updateDoc(doc(db, 'gameRooms', roomId), updates as Record<string, unknown>), 1800);
+      updateDoc(doc(db, 'rooms', roomId), updates as Record<string, unknown>).catch(() => {});
+      updateDoc(doc(db, 'rooms', cleanCode), updates as Record<string, unknown>).catch(() => {});
+      updateDoc(doc(db, 'duels', roomId), updates as Record<string, unknown>).catch(() => {});
     } catch {
       // non-fatal
     }
   };
-
-  try {
-    await applyRoomUpdates();
-  } catch (updateErr) {
-    console.warn('Firestore join update notice (fallback active):', updateErr);
-  }
+  applyRoomUpdates().catch(() => {});
 
   return updatedRoom;
 }

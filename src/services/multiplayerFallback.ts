@@ -583,3 +583,146 @@ export function leaveFallbackQueue(roomId: string): void {
     }
   }
 }
+
+// -------------------------------------------------------------
+// Worldwide WebRTC Queue Lobby (Instant cross-device pairing)
+// -------------------------------------------------------------
+const QUEUE_LOBBY_PREFIX = 'cw-queue-lobby-';
+let activeQueueLobbyPeer: Peer | null = null;
+
+export function initQueueLobbyPeer(
+  category: string,
+  user: UserProfile,
+  onOpponentFound: (matchedRoom: GameRoom) => void
+): () => void {
+  const normCategory = category.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'quiz';
+  const targetLobbyId = `${QUEUE_LOBBY_PREFIX}${normCategory}`;
+  const mySessionId = getClientSessionId();
+
+  let isDestroyed = false;
+
+  try {
+    if (activeQueueLobbyPeer) {
+      activeQueueLobbyPeer.destroy();
+      activeQueueLobbyPeer = null;
+    }
+
+    // Try becoming host of this queue slot or connecting to it if it exists
+    const hostPeer = new Peer(targetLobbyId, {
+      debug: 0,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ],
+      },
+    });
+    activeQueueLobbyPeer = hostPeer;
+
+    // If successfully bound to targetLobbyId, we are waiting as host!
+    hostPeer.on('connection', (conn) => {
+      conn.on('data', async (raw: unknown) => {
+        const data = raw as FallbackMessage;
+        if (data?.type === 'GUEST_JOIN' && !isDestroyed) {
+          isDestroyed = true;
+          const questions = await fetchDynamicGameQuestions({
+            category: category as GameCategory,
+            count: category === 'guess_number' ? 3 : 5,
+            userLevel: user.level,
+          });
+          const now = Date.now();
+          const roomId = `room_p2p_${now}`;
+          const room: GameRoom = {
+            id: roomId,
+            roomCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
+            hostId: user.uid || `host_${mySessionId}`,
+            hostSessionId: mySessionId,
+            hostUsername: user.username || 'Explorer',
+            hostCountryCode: user.countryCode || 'TN',
+            hostCountryFlag: user.countryFlag || '🇹🇳',
+            hostAvatar: user.avatar || '',
+            hostScore: 0,
+            hostReady: true,
+            guestId: data.guest.uid || `guest_${data.guestSessionId}`,
+            guestSessionId: data.guestSessionId,
+            guestUsername: data.guest.username || 'Challenger',
+            guestCountryCode: data.guest.countryCode || 'UN',
+            guestCountryFlag: data.guest.countryFlag || '🌍',
+            guestAvatar: data.guest.avatar || '',
+            guestScore: 0,
+            guestReady: true,
+            gameMode: category as GameCategory,
+            status: 'starting',
+            currentRound: 1,
+            totalRounds: questions.length,
+            questionIds: questions.map((q) => q.id),
+            questions,
+            currentQuestion: questions[0],
+            roundStartedAt: now,
+            roundStartTime: now,
+            isBotOpponent: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          saveFallbackRoom(room, true);
+          activePeerConnections.set(roomId, conn);
+          conn.send({ type: 'ROOM_SYNC', room });
+          onOpponentFound(room);
+        }
+      });
+    });
+
+    // If targetLobbyId is already taken, someone else is hosting! We connect as guest!
+    hostPeer.on('error', (err) => {
+      if (err?.type === 'unavailable-id' && !isDestroyed) {
+        const guestPeer = new Peer({
+          debug: 0,
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' },
+            ],
+          },
+        });
+        activeQueueLobbyPeer = guestPeer;
+
+        guestPeer.on('open', () => {
+          const conn = guestPeer.connect(targetLobbyId, { reliable: true });
+          conn.on('open', () => {
+            conn.send({
+              type: 'GUEST_JOIN',
+              roomId: '',
+              guest: user,
+              guestSessionId: mySessionId,
+            });
+          });
+          conn.on('data', (raw: unknown) => {
+            const data = raw as FallbackMessage;
+            if (data?.type === 'ROOM_SYNC' && data.room && !isDestroyed) {
+              isDestroyed = true;
+              saveFallbackRoom(data.room, true);
+              activePeerConnections.set(data.room.id, conn);
+              onOpponentFound(data.room);
+            }
+          });
+        });
+      }
+    });
+
+    return () => {
+      isDestroyed = true;
+      try {
+        if (activeQueueLobbyPeer) {
+          activeQueueLobbyPeer.destroy();
+          activeQueueLobbyPeer = null;
+        }
+      } catch {
+        // ignore
+      }
+    };
+  } catch (err) {
+    console.warn('Queue lobby peer notice:', err);
+    return () => {};
+  }
+}

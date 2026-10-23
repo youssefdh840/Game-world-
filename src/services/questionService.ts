@@ -599,7 +599,12 @@ async function fetchFirestoreQuestions(
       );
     }
 
-    const snap = await getDocs(q);
+    const snap = await Promise.race([
+      getDocs(q),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1800)),
+    ]);
+    if (!snap) return [];
+
     const result: Question[] = [];
     snap.forEach((doc) => {
       const data = doc.data() as Question;
