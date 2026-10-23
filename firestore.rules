@@ -144,5 +144,10 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+
+    // Connection Health Check Probe
+    match /test/{docId} {
+      allow read: if true;
+    }
   }
 }

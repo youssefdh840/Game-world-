@@ -22,6 +22,10 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
 export type FallbackMessage =
   | { type: 'ROOM_SYNC'; room: GameRoom }
   | { type: 'GUEST_JOIN'; roomId: string; guest: Partial<UserProfile>; guestSessionId: string }
+  | { type: 'MATCH_READY'; roomId: string; room: GameRoom; startTime: number; hostSessionId: string }
+  | { type: 'MATCH_ACK'; roomId: string; guestSessionId: string; timestamp: number }
+  | { type: 'GAME_START'; roomId: string; room: GameRoom; startTime: number }
+  | { type: 'GAME_START_CONFIRMED'; roomId: string; guestSessionId: string; timestamp: number }
   | { type: 'PLAYER_ANSWER'; roomId: string; isHost: boolean; answer: string; answerTime: number; scoreDelta: number }
   | { type: 'ADVANCE_ROUND'; roomId: string; nextRound: number; nextQuestion?: Question; timestamp: number }
   | { type: 'CHAT_MSG'; roomId: string; message: ChatMessage }
@@ -30,8 +34,50 @@ export type FallbackMessage =
 // Subscribed listeners
 type FallbackRoomListener = (room: GameRoom) => void;
 type FallbackChatListener = (msg: ChatMessage) => void;
+export type FallbackHandshakeListener = (msg: FallbackMessage) => void;
+
 const roomListeners = new Map<string, Set<FallbackRoomListener>>();
 const chatListeners = new Map<string, Set<FallbackChatListener>>();
+const handshakeListeners = new Map<string, Set<FallbackHandshakeListener>>();
+
+// Subscribe to two-way handshake events (MATCH_READY, MATCH_ACK, GAME_START, GAME_START_CONFIRMED, GUEST_JOIN)
+export function subscribeToFallbackHandshake(
+  roomIdOrCode: string,
+  onHandshake: FallbackHandshakeListener
+): () => void {
+  const clean = roomIdOrCode.trim();
+  const keys = [clean, clean.toUpperCase(), `room_code_${clean.toUpperCase()}`, '*'];
+  keys.forEach((k) => {
+    if (!handshakeListeners.has(k)) handshakeListeners.set(k, new Set());
+    handshakeListeners.get(k)!.add(onHandshake);
+  });
+  return () => {
+    keys.forEach((k) => {
+      handshakeListeners.get(k)?.delete(onHandshake);
+    });
+  };
+}
+
+function notifyHandshakeListeners(roomId: string, msg: FallbackMessage) {
+  const clean = (roomId || '').trim();
+  const candidates = [clean, clean.toUpperCase(), `room_code_${clean.toUpperCase()}`, '*'];
+  const notified = new Set<FallbackHandshakeListener>();
+  candidates.forEach((k) => {
+    const set = handshakeListeners.get(k);
+    if (set) {
+      set.forEach((fn) => {
+        if (!notified.has(fn)) {
+          notified.add(fn);
+          try {
+            fn(msg);
+          } catch (err) {
+            console.warn('Handshake listener note:', err);
+          }
+        }
+      });
+    }
+  });
+}
 
 // Notify registered in-app listeners
 function notifyRoomListeners(room: GameRoom) {
@@ -60,7 +106,7 @@ function notifyChatListeners(roomId: string, msg: ChatMessage) {
   }
 }
 
-// Global broadcast dispatcher (BroadcastChannel + localStorage storage event)
+// Global broadcast dispatcher (BroadcastChannel + localStorage storage event + WebRTC peers)
 export function broadcastFallbackMessage(msg: FallbackMessage) {
   if (broadcastChannel) {
     try {
@@ -76,10 +122,8 @@ export function broadcastFallbackMessage(msg: FallbackMessage) {
       // ignore
     }
   }
-  // Send via active WebRTC peer connection if available
-  const targetRoomId = 'roomId' in msg ? msg.roomId : 'room' in msg ? msg.room.id : '';
-  if (targetRoomId) {
-    const conn = activePeerConnections.get(targetRoomId);
+  // Send via active WebRTC peer connections (broadcast to all open data channels)
+  activePeerConnections.forEach((conn) => {
     if (conn && conn.open) {
       try {
         conn.send(msg);
@@ -87,16 +131,42 @@ export function broadcastFallbackMessage(msg: FallbackMessage) {
         // ignore
       }
     }
-  }
+  });
 }
 
 // Receive and handle incoming broadcast/storage messages
 function handleIncomingMessage(msg: FallbackMessage) {
   if (!msg || !msg.type) return;
 
+  const targetRoomId = 'roomId' in msg ? msg.roomId : 'room' in msg ? msg.room.id : '';
+  if (targetRoomId) {
+    notifyHandshakeListeners(targetRoomId, msg);
+  } else {
+    notifyHandshakeListeners('*', msg);
+  }
+
   if (msg.type === 'ROOM_SYNC') {
     saveFallbackRoom(msg.room, false);
     notifyRoomListeners(msg.room);
+  } else if (msg.type === 'MATCH_READY' || msg.type === 'GAME_START') {
+    const updated: GameRoom = {
+      ...msg.room,
+      roundStartTime: msg.startTime || msg.room.roundStartTime,
+      roundStartedAt: msg.startTime || msg.room.roundStartedAt,
+      status: 'ready' as const,
+    };
+    saveFallbackRoom(updated, false);
+    notifyRoomListeners(updated);
+  } else if (msg.type === 'MATCH_ACK' || msg.type === 'GAME_START_CONFIRMED') {
+    const current = getFallbackRoom(msg.roomId);
+    if (current) {
+      const updated: GameRoom = {
+        ...current,
+        guestAck: true,
+      };
+      saveFallbackRoom(updated, false);
+      notifyRoomListeners(updated);
+    }
   } else if (msg.type === 'PLAYER_ANSWER') {
     const current = getFallbackRoom(msg.roomId);
     if (current) {
@@ -291,7 +361,7 @@ const PEERJS_PREFIX = 'wc-mapia-v2-';
 export function initHostPeer(
   roomCode: string,
   initialRoom: GameRoom,
-  onGuestJoined: (updatedRoom: GameRoom) => void
+  onGuestJoined: (updatedRoom: GameRoom, startTime: number) => void
 ): () => void {
   const cleanCode = roomCode.trim().toLowerCase();
   const peerId = `${PEERJS_PREFIX}${cleanCode}`;
@@ -315,11 +385,13 @@ export function initHostPeer(
 
     peer.on('connection', (conn) => {
       activePeerConnections.set(initialRoom.id, conn);
+      activePeerConnections.set(`room_code_${roomCode.toUpperCase()}`, conn);
+      activePeerConnections.set(roomCode.toUpperCase(), conn);
 
       conn.on('data', (raw: unknown) => {
         const data = raw as FallbackMessage;
         if (data?.type === 'GUEST_JOIN') {
-          const now = Date.now();
+          const startTime = Date.now() + 3200;
           const current = getFallbackRoom(initialRoom.id) || initialRoom;
           const updated: GameRoom = {
             ...current,
@@ -331,17 +403,44 @@ export function initHostPeer(
             guestAvatar: data.guest.avatar || current.guestAvatar,
             guestScore: 0,
             guestReady: true,
-            status: 'starting',
-            roundStartedAt: now,
-            roundStartTime: now,
+            hostReady: true,
+            status: 'ready',
+            roundStartedAt: startTime,
+            roundStartTime: startTime,
             updatedAt: new Date().toISOString(),
           };
 
           saveFallbackRoom(updated, true);
-          onGuestJoined(updated);
 
-          // Reply with synchronized room data
+          // 1. Reply with MATCH_READY and ROOM_SYNC
+          const readyMsg: FallbackMessage = {
+            type: 'MATCH_READY',
+            roomId: initialRoom.id,
+            room: updated,
+            startTime,
+            hostSessionId: initialRoom.hostSessionId || getClientSessionId(),
+          };
+          conn.send(readyMsg);
           conn.send({ type: 'ROOM_SYNC', room: updated });
+          broadcastFallbackMessage(readyMsg);
+
+          // 2. Strict two-way handshake: Wait for guest MATCH_ACK with 500ms safety timeout
+          let acked = false;
+          const completeMatch = () => {
+            if (acked) return;
+            acked = true;
+            onGuestJoined(updated, startTime);
+          };
+
+          const safetyTimer = setTimeout(completeMatch, 500);
+
+          conn.on('data', (innerRaw: unknown) => {
+            const inner = innerRaw as FallbackMessage;
+            if (inner?.type === 'MATCH_ACK' || inner?.type === 'GAME_START_CONFIRMED') {
+              clearTimeout(safetyTimer);
+              completeMatch();
+            }
+          });
         } else if (data) {
           handleIncomingMessage(data);
         }
@@ -369,7 +468,7 @@ export function initHostPeer(
 export async function joinGuestPeer(
   roomCode: string,
   guestUser: Partial<UserProfile>
-): Promise<GameRoom | null> {
+): Promise<{ room: GameRoom; startTime: number } | null> {
   const cleanCode = roomCode.trim().toLowerCase();
   const targetPeerId = `${PEERJS_PREFIX}${cleanCode}`;
   const mySessionId = getClientSessionId();
@@ -382,7 +481,12 @@ export async function joinGuestPeer(
       if (!resolved) {
         resolved = true;
         const local = getFallbackRoom(roomCode);
-        resolve(local);
+        if (local) {
+          const startTime = local.roundStartTime || Date.now() + 3200;
+          resolve({ room: local, startTime });
+        } else {
+          resolve(null);
+        }
       }
     }, 2500);
 
@@ -408,8 +512,9 @@ export async function joinGuestPeer(
 
         conn.on('open', () => {
           activePeerConnections.set(`room_code_${roomCode.toUpperCase()}`, conn);
+          activePeerConnections.set(roomCode.toUpperCase(), conn);
 
-          // Request join
+          // Step 1: Send GUEST_JOIN request
           conn.send({
             type: 'GUEST_JOIN',
             roomId: `room_code_${roomCode.toUpperCase()}`,
@@ -420,12 +525,36 @@ export async function joinGuestPeer(
 
         conn.on('data', (raw: unknown) => {
           const data = raw as FallbackMessage;
-          if (data?.type === 'ROOM_SYNC' && data.room) {
-            saveFallbackRoom(data.room, true);
+          if (
+            (data?.type === 'MATCH_READY' || data?.type === 'GAME_START' || data?.type === 'ROOM_SYNC') &&
+            'room' in data &&
+            data.room
+          ) {
+            const receivedRoom = data.room;
+            const startTime =
+              ('startTime' in data && typeof data.startTime === 'number' && data.startTime > 0)
+                ? data.startTime
+                : receivedRoom.roundStartTime || Date.now() + 3200;
+
+            // Step 2: Respond with MATCH_ACK & GAME_START_CONFIRMED to complete handshake
+            const ackMsg: FallbackMessage = {
+              type: 'MATCH_ACK',
+              roomId: receivedRoom.id,
+              guestSessionId: mySessionId,
+              timestamp: Date.now(),
+            };
+            try {
+              conn.send(ackMsg);
+            } catch {
+              // ignore
+            }
+            broadcastFallbackMessage(ackMsg);
+
+            saveFallbackRoom(receivedRoom, true);
             if (!resolved) {
               resolved = true;
               clearTimeout(timer);
-              resolve(data.room);
+              resolve({ room: receivedRoom, startTime });
             }
           }
         });
@@ -434,7 +563,8 @@ export async function joinGuestPeer(
           if (!resolved) {
             resolved = true;
             clearTimeout(timer);
-            resolve(getFallbackRoom(roomCode));
+            const local = getFallbackRoom(roomCode);
+            resolve(local ? { room: local, startTime: local.roundStartTime || Date.now() + 3200 } : null);
           }
         });
       });
@@ -443,14 +573,16 @@ export async function joinGuestPeer(
         if (!resolved) {
           resolved = true;
           clearTimeout(timer);
-          resolve(getFallbackRoom(roomCode));
+          const local = getFallbackRoom(roomCode);
+          resolve(local ? { room: local, startTime: local.roundStartTime || Date.now() + 3200 } : null);
         }
       });
     } catch {
       if (!resolved) {
         resolved = true;
         clearTimeout(timer);
-        resolve(getFallbackRoom(roomCode));
+        const local = getFallbackRoom(roomCode);
+        resolve(local ? { room: local, startTime: local.roundStartTime || Date.now() + 3200 } : null);
       }
     }
   });
@@ -593,7 +725,7 @@ let activeQueueLobbyPeer: Peer | null = null;
 export function initQueueLobbyPeer(
   category: string,
   user: UserProfile,
-  onOpponentFound: (matchedRoom: GameRoom) => void
+  onOpponentFound: (matchedRoom: GameRoom, startTime: number) => void
 ): () => void {
   const normCategory = category.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'quiz';
   const targetLobbyId = `${QUEUE_LOBBY_PREFIX}${normCategory}`;
@@ -630,8 +762,8 @@ export function initQueueLobbyPeer(
             count: category === 'guess_number' ? 3 : 5,
             userLevel: user.level,
           });
-          const now = Date.now();
-          const roomId = `room_p2p_${now}`;
+          const startTime = Date.now() + 3200;
+          const roomId = `room_p2p_${Date.now()}`;
           const room: GameRoom = {
             id: roomId,
             roomCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
@@ -652,14 +784,14 @@ export function initQueueLobbyPeer(
             guestScore: 0,
             guestReady: true,
             gameMode: category as GameCategory,
-            status: 'starting',
+            status: 'ready',
             currentRound: 1,
             totalRounds: questions.length,
             questionIds: questions.map((q) => q.id),
             questions,
             currentQuestion: questions[0],
-            roundStartedAt: now,
-            roundStartTime: now,
+            roundStartedAt: startTime,
+            roundStartTime: startTime,
             isBotOpponent: false,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -667,8 +799,39 @@ export function initQueueLobbyPeer(
 
           saveFallbackRoom(room, true);
           activePeerConnections.set(roomId, conn);
-          conn.send({ type: 'ROOM_SYNC', room });
-          onOpponentFound(room);
+
+          // Step 1: Send GAME_START direct sync event to Device B
+          const startMsg: FallbackMessage = {
+            type: 'GAME_START',
+            roomId,
+            room,
+            startTime,
+          };
+          try {
+            conn.send(startMsg);
+            conn.send({ type: 'ROOM_SYNC', room });
+          } catch {
+            // ignore
+          }
+          broadcastFallbackMessage(startMsg);
+
+          // Step 2: Wait for Device B to respond with GAME_START_CONFIRMED
+          let acked = false;
+          const launchMatch = () => {
+            if (acked) return;
+            acked = true;
+            onOpponentFound(room, startTime);
+          };
+
+          const safetyTimer = setTimeout(launchMatch, 500);
+
+          conn.on('data', (innerRaw: unknown) => {
+            const inner = innerRaw as FallbackMessage;
+            if (inner?.type === 'GAME_START_CONFIRMED' || inner?.type === 'MATCH_ACK') {
+              clearTimeout(safetyTimer);
+              launchMatch();
+            }
+          });
         }
       });
     });
@@ -697,13 +860,39 @@ export function initQueueLobbyPeer(
               guestSessionId: mySessionId,
             });
           });
+
           conn.on('data', (raw: unknown) => {
             const data = raw as FallbackMessage;
-            if (data?.type === 'ROOM_SYNC' && data.room && !isDestroyed) {
+            if (
+              (data?.type === 'GAME_START' || data?.type === 'MATCH_READY' || data?.type === 'ROOM_SYNC') &&
+              'room' in data &&
+              data.room &&
+              !isDestroyed
+            ) {
               isDestroyed = true;
-              saveFallbackRoom(data.room, true);
-              activePeerConnections.set(data.room.id, conn);
-              onOpponentFound(data.room);
+              const matchedRoom = data.room;
+              const startTime =
+                ('startTime' in data && typeof data.startTime === 'number' && data.startTime > 0)
+                  ? data.startTime
+                  : matchedRoom.roundStartTime || Date.now() + 3200;
+
+              // Step 2: Device B responds with GAME_START_CONFIRMED
+              const confirmMsg: FallbackMessage = {
+                type: 'GAME_START_CONFIRMED',
+                roomId: matchedRoom.id,
+                guestSessionId: mySessionId,
+                timestamp: Date.now(),
+              };
+              try {
+                conn.send(confirmMsg);
+              } catch {
+                // ignore
+              }
+              broadcastFallbackMessage(confirmMsg);
+
+              saveFallbackRoom(matchedRoom, true);
+              activePeerConnections.set(matchedRoom.id, conn);
+              onOpponentFound(matchedRoom, startTime);
             }
           });
         });

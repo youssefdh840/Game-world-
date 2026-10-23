@@ -105,8 +105,12 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     }
   };
 
-  // Helper to start the 3-2-1 match countdown
-  const commenceMatch = (room: GameRoom, opponent: Partial<UserProfile>) => {
+  // Helper to start the 3-2-1 match countdown locked to synchronized startTime
+  const commenceMatch = (
+    room: GameRoom,
+    opponent: Partial<UserProfile>,
+    syncedStartTime?: number
+  ) => {
     if (hasCommencedRef.current) return;
     hasCommencedRef.current = true;
 
@@ -122,20 +126,31 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     setStatusText(`Real challenger found: ${opponent.username || 'Opponent'}!`);
     sounds.playCorrect();
 
-    let cd = 3;
-    setCountdown(cd);
-    sounds.playCountdown();
+    const startTime =
+      syncedStartTime ||
+      (room.roundStartTime && room.roundStartTime > Date.now() ? room.roundStartTime : Date.now() + 3200);
 
-    cdIntervalRef.current = setInterval(() => {
-      cd -= 1;
-      if (cd > 0) {
-        setCountdown(cd);
-        sounds.playCountdown();
+    room.roundStartTime = startTime;
+    room.roundStartedAt = startTime;
+
+    let lastSec = -1;
+
+    const tick = () => {
+      const remainingMs = startTime - Date.now();
+      const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+
+      if (remainingSec > 0) {
+        setCountdown(remainingSec);
+        if (remainingSec !== lastSec) {
+          lastSec = remainingSec;
+          sounds.playCountdown();
+        }
       } else {
-        if (cdIntervalRef.current) clearInterval(cdIntervalRef.current);
-        const now = Date.now();
-        room.roundStartTime = now;
-        room.roundStartedAt = now;
+        if (cdIntervalRef.current) {
+          clearInterval(cdIntervalRef.current);
+          cdIntervalRef.current = null;
+        }
+        setCountdown(0);
         room.status = 'playing';
 
         // Authoritative Host activates match in Firestore
@@ -147,12 +162,15 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
           ? room.guestSessionId !== mySessionId
           : (room.hostId === currentUid || room.hostId === user.uid);
         if (isHost) {
-          syncRoomRoundStartTime(room.id, now);
+          syncRoomRoundStartTime(room.id, startTime);
         }
 
         onMatchFound(room);
       }
-    }, 1000);
+    };
+
+    tick();
+    cdIntervalRef.current = setInterval(tick, 50);
   };
 
   // Reset modal state when opened/closed
@@ -188,7 +206,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
 
     // Join the real Firestore queue
     joinMatchmakingQueue(safeUser, category, targetCountryCode)
-      .then(({ roomId, matchedRoom }) => {
+      .then(({ roomId, matchedRoom, startTime }) => {
         if (isCancelled) {
           leaveMatchmakingQueue(roomId);
           return;
@@ -206,14 +224,14 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
             avatar: matchedRoom.hostAvatar || DEFAULT_AVATAR,
             countryName: 'Host',
           };
-          commenceMatch(matchedRoom, opp);
+          commenceMatch(matchedRoom, opp, startTime);
           return;
         }
 
         // Otherwise, wait for another real player to join our room
         unsubRef.current = listenToMatchmakingRoom(
           roomId,
-          (room) => {
+          (room, matchStartTime) => {
             if (isCancelled) return;
             const opp: Partial<UserProfile> = {
               uid: room.guestId,
@@ -223,7 +241,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
               avatar: room.guestAvatar || DEFAULT_AVATAR,
               countryName: 'Guest',
             };
-            commenceMatch(room, opp);
+            commenceMatch(room, opp, matchStartTime);
           },
           safeUser,
           category
@@ -260,7 +278,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
       setStatusText(`Room created! Code: ${roomCode}`);
 
       // Listen for friend joining
-      unsubRef.current = listenToPrivateRoomHost(room.id, (updatedRoom) => {
+      unsubRef.current = listenToPrivateRoomHost(room.id, (updatedRoom, matchStartTime) => {
         const opp: Partial<UserProfile> = {
           uid: updatedRoom.guestId,
           username: updatedRoom.guestUsername || 'Friend',
@@ -269,7 +287,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
           avatar: updatedRoom.guestAvatar || DEFAULT_AVATAR,
           countryName: 'Friend',
         };
-        commenceMatch(updatedRoom, opp);
+        commenceMatch(updatedRoom, opp, matchStartTime);
       });
     } catch (err) {
       console.warn('Room code generation notice:', err);
@@ -296,7 +314,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
       setCodeSuccessMsg('');
       cleanUpListeners(true);
 
-      const room = await joinPrivateDuelRoom(clean, safeUser);
+      const { room, startTime } = await joinPrivateDuelRoom(clean, safeUser);
       const opp: Partial<UserProfile> = {
         uid: room.hostId,
         username: room.hostUsername || 'Host',
@@ -305,7 +323,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         avatar: room.hostAvatar || DEFAULT_AVATAR,
         countryName: 'Host',
       };
-      commenceMatch(room, opp);
+      commenceMatch(room, opp, startTime);
     } catch (err) {
       console.warn('Room code join notice:', err);
       const errMsg = err instanceof Error ? err.message : 'Invalid code or room not found';

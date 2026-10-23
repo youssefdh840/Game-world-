@@ -88,7 +88,7 @@ export interface Question {
   source?: 'curated' | 'opentdb' | 'firestore' | 'community';
 }
 
-export type GameRoomStatus = 'waiting' | 'starting' | 'playing' | 'round_result' | 'finished';
+export type GameRoomStatus = 'waiting' | 'starting' | 'ready' | 'playing' | 'round_result' | 'finished';
 
 export interface GameRoom {
   id: string;
@@ -103,6 +103,7 @@ export interface GameRoom {
   hostAnswer?: string | null;
   hostAnswerTime?: number | null;
   hostReady: boolean;
+  hostAck?: boolean;
 
   guestId: string;
   guestSessionId?: string;
@@ -114,6 +115,7 @@ export interface GameRoom {
   guestAnswer?: string | null;
   guestAnswerTime?: number | null;
   guestReady: boolean;
+  guestAck?: boolean;
 
   gameMode: GameCategory | 'mixed';
   targetCountryCode?: string;

@@ -195,9 +195,21 @@
         "badgeTitle": { "type": "string", "maxLength": 100 }
       },
       "required": ["code", "name", "flag", "capital", "continent"]
+    },
+    "TestConnection": {
+      "title": "TestConnection",
+      "description": "Probe document for connectivity health check",
+      "type": "object",
+      "properties": {
+        "status": { "type": "string", "maxLength": 50 }
+      }
     }
   },
   "firestore": {
+    "/test/{docId}": {
+      "schema": "TestConnection",
+      "description": "Probe document for connection verification"
+    },
     "/users/{userId}": {
       "schema": "User",
       "description": "Stores user profiles, XP, level, unlocked countries summary, coins"

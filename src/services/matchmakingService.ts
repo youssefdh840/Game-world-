@@ -21,6 +21,7 @@ import {
   getFallbackRoom,
   updateFallbackRoom,
   subscribeToFallbackRoom,
+  subscribeToFallbackHandshake,
   initHostPeer,
   joinGuestPeer,
   initQueueLobbyPeer,
@@ -170,6 +171,7 @@ export interface JoinQueueResult {
   roomId: string;
   isHost: boolean;
   matchedRoom?: GameRoom;
+  startTime?: number;
   unsubscribe: () => void;
 }
 
@@ -214,7 +216,8 @@ export async function joinMatchmakingQueue(
 
       if (openRooms.length > 0) {
         const waitingRoom = openRooms[0];
-        const now = Date.now();
+        // Synchronized start time: exactly 3.2 seconds into the future
+        const startTime = Date.now() + 3200;
 
         const updates: Partial<GameRoom> = sanitizeFirestorePayload({
           guestId: player.uid,
@@ -225,9 +228,9 @@ export async function joinMatchmakingQueue(
           guestAvatar: player.avatar,
           guestScore: 0,
           guestReady: true,
-          status: 'starting' as const,
-          roundStartedAt: now,
-          roundStartTime: now,
+          status: 'ready' as const,
+          roundStartedAt: startTime,
+          roundStartTime: startTime,
           updatedAt: new Date().toISOString(),
         });
 
@@ -238,10 +241,25 @@ export async function joinMatchmakingQueue(
         const matchedRoom: GameRoom = { ...waitingRoom, ...updates };
         saveFallbackRoom(matchedRoom, true);
 
+        // Step 1: Send GUEST_JOIN and GAME_START sync events to Device B across all transports
+        broadcastFallbackMessage({
+          type: 'GUEST_JOIN',
+          roomId: waitingRoom.id,
+          guest: player,
+          guestSessionId: mySessionId,
+        });
+        broadcastFallbackMessage({
+          type: 'GAME_START',
+          roomId: waitingRoom.id,
+          room: matchedRoom,
+          startTime,
+        });
+
         return {
           roomId: waitingRoom.id,
           isHost: false,
           matchedRoom,
+          startTime,
           unsubscribe: () => {},
         };
       }
@@ -258,10 +276,26 @@ export async function joinMatchmakingQueue(
       targetCountryCode
     );
     if (fallbackResult.matchedRoom) {
+      const startTime = fallbackResult.matchedRoom.roundStartTime || Date.now() + 3200;
+      const matchedRoom = {
+        ...fallbackResult.matchedRoom,
+        roundStartTime: startTime,
+        roundStartedAt: startTime,
+        status: 'ready' as const,
+      };
+      saveFallbackRoom(matchedRoom, true);
+      broadcastFallbackMessage({
+        type: 'GAME_START',
+        roomId: fallbackResult.roomId,
+        room: matchedRoom,
+        startTime,
+      });
+
       return {
         roomId: fallbackResult.roomId,
         isHost: false,
-        matchedRoom: fallbackResult.matchedRoom,
+        matchedRoom,
+        startTime,
         unsubscribe: () => {},
       };
     }
@@ -350,29 +384,79 @@ export async function joinMatchmakingQueue(
 // Listens to room updates when another real player joins our waiting room, with active pairing loop
 export function listenToMatchmakingRoom(
   roomId: string,
-  onMatched: (room: GameRoom) => void,
+  onMatched: (room: GameRoom, startTime: number) => void,
   user?: UserProfile,
   preferredCategory: GameCategory | 'mixed' = 'cultural_quiz'
 ) {
   let isDone = false;
   const mySessionId = getClientSessionId();
 
+  const handleMatchFound = (room: GameRoom, explicitStartTime?: number) => {
+    if (isDone) return;
+    isDone = true;
+
+    const startTime =
+      explicitStartTime ||
+      (room.roundStartTime && room.roundStartTime > Date.now() ? room.roundStartTime : Date.now() + 3200);
+
+    const updatedRoom: GameRoom = {
+      ...room,
+      status: 'ready',
+      hostReady: true,
+      guestReady: true,
+      roundStartTime: startTime,
+      roundStartedAt: startTime,
+      updatedAt: new Date().toISOString(),
+    };
+
+    saveFallbackRoom(updatedRoom, true);
+
+    // Broadcast GAME_START & MATCH_READY to all devices/tabs
+    broadcastFallbackMessage({
+      type: 'MATCH_READY',
+      roomId: room.id,
+      room: updatedRoom,
+      startTime,
+      hostSessionId: mySessionId,
+    });
+    broadcastFallbackMessage({
+      type: 'GAME_START',
+      roomId: room.id,
+      room: updatedRoom,
+      startTime,
+    });
+
+    // Update Firestore doc asynchronously
+    withTimeout(
+      updateDoc(
+        doc(db, 'gameRooms', room.id),
+        sanitizeFirestorePayload({
+          status: 'ready',
+          hostReady: true,
+          roundStartTime: startTime,
+          roundStartedAt: startTime,
+          updatedAt: new Date().toISOString(),
+        }) as Record<string, unknown>
+      ),
+      1800
+    ).catch(() => {});
+
+    onMatched(updatedRoom, startTime);
+  };
+
   // 1. Fallback & Broadcast listener
   const unsubFallback = subscribeToFallbackRoom(roomId, (room) => {
     if (isDone) return;
-    if (room.guestId && (room.status === 'starting' || room.status === 'playing')) {
-      isDone = true;
-      onMatched(room);
+    if (room.guestId && (room.status === 'starting' || room.status === 'ready' || room.status === 'playing')) {
+      handleMatchFound(room);
     }
   });
 
-  // 2. Worldwide WebRTC Queue Lobby peer matching
+  // 2. Worldwide WebRTC Queue Lobby peer matching (two-way handshaked)
   let unsubLobby = () => {};
   if (user) {
-    unsubLobby = initQueueLobbyPeer(preferredCategory, user, (matchedRoom) => {
-      if (isDone) return;
-      isDone = true;
-      onMatched(matchedRoom);
+    unsubLobby = initQueueLobbyPeer(preferredCategory, user, (matchedRoom, startTime) => {
+      handleMatchFound(matchedRoom, startTime);
     });
   }
 
@@ -385,9 +469,8 @@ export function listenToMatchmakingRoom(
         if (isDone) return;
         if (snap.exists()) {
           const room = { ...(snap.data() as GameRoom), id: snap.id };
-          if (room.guestId && (room.status === 'starting' || room.status === 'playing')) {
-            isDone = true;
-            onMatched(room);
+          if (room.guestId && (room.status === 'starting' || room.status === 'ready' || room.status === 'playing')) {
+            handleMatchFound(room);
           }
         }
       },
@@ -431,10 +514,9 @@ export function listenToMatchmakingRoom(
       if (otherOpenRooms.length > 0) {
         const otherRoom = otherOpenRooms[0];
         if (otherRoom.id < roomId) {
-          isDone = true;
           clearInterval(pollInterval);
 
-          const now = Date.now();
+          const startTime = Date.now() + 3200;
           const p = ensurePlayerIdentity(user);
 
           const updates: Partial<GameRoom> = sanitizeFirestorePayload({
@@ -446,9 +528,9 @@ export function listenToMatchmakingRoom(
             guestAvatar: p.avatar,
             guestScore: 0,
             guestReady: true,
-            status: 'starting' as const,
-            roundStartedAt: now,
-            roundStartTime: now,
+            status: 'ready' as const,
+            roundStartedAt: startTime,
+            roundStartTime: startTime,
             updatedAt: new Date().toISOString(),
           });
 
@@ -457,9 +539,18 @@ export function listenToMatchmakingRoom(
           deleteDoc(doc(db, 'gameRooms', roomId)).catch(() => {});
           leaveFallbackQueueService(roomId);
 
-          const matched = { ...otherRoom, ...updates };
+          const matched: GameRoom = { ...otherRoom, ...updates };
           saveFallbackRoom(matched, true);
-          onMatched(matched);
+
+          // Direct sync event to other device
+          broadcastFallbackMessage({
+            type: 'GAME_START',
+            roomId: otherRoom.id,
+            room: matched,
+            startTime,
+          });
+
+          handleMatchFound(matched, startTime);
         }
       }
     } catch {
@@ -599,7 +690,7 @@ export async function createPrivateDuelRoom(
 export async function joinPrivateDuelRoom(
   roomCodeInput: string,
   user: UserProfile
-): Promise<GameRoom> {
+): Promise<{ room: GameRoom; startTime: number }> {
   const cleanCode = roomCodeInput.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (cleanCode.length !== 6) {
     throw new Error('Please enter a valid 6-character room code.');
@@ -610,6 +701,7 @@ export async function joinPrivateDuelRoom(
   const roomId = `room_code_${cleanCode}`;
 
   let currentRoom: GameRoom | null = null;
+  let peerStartTime: number | undefined;
 
   // 1. First check local storage & in-memory fallback (instant!)
   const localRoom = getFallbackRoom(cleanCode);
@@ -631,7 +723,7 @@ export async function joinPrivateDuelRoom(
       return null;
     };
 
-    const fetchPeer = async (): Promise<GameRoom | null> => {
+    const fetchPeer = async (): Promise<{ room: GameRoom; startTime: number } | null> => {
       try {
         return await withTimeout(joinGuestPeer(cleanCode, player), 2200);
       } catch (peerErr) {
@@ -641,7 +733,12 @@ export async function joinPrivateDuelRoom(
     };
 
     const [fsRes, peerRes] = await Promise.all([fetchFirestore(), fetchPeer()]);
-    currentRoom = fsRes || peerRes || getFallbackRoom(cleanCode);
+    if (peerRes) {
+      currentRoom = peerRes.room;
+      peerStartTime = peerRes.startTime;
+    } else {
+      currentRoom = fsRes || getFallbackRoom(cleanCode);
+    }
   }
 
   if (!currentRoom) {
@@ -663,7 +760,11 @@ export async function joinPrivateDuelRoom(
     throw new Error('This room is already full (another player joined).');
   }
 
-  const now = Date.now();
+  const startTime =
+    peerStartTime ||
+    (currentRoom.roundStartTime && currentRoom.roundStartTime > Date.now()
+      ? currentRoom.roundStartTime
+      : Date.now() + 3200);
 
   const updates: Partial<GameRoom> = sanitizeFirestorePayload({
     guestId: player.uid,
@@ -674,9 +775,9 @@ export async function joinPrivateDuelRoom(
     guestAvatar: player.avatar,
     guestScore: 0,
     guestReady: true,
-    status: 'starting' as const,
-    roundStartedAt: now,
-    roundStartTime: now,
+    status: 'ready' as const,
+    roundStartedAt: startTime,
+    roundStartTime: startTime,
     updatedAt: new Date().toISOString(),
   });
 
@@ -684,6 +785,8 @@ export async function joinPrivateDuelRoom(
 
   // Always update fallback storage & broadcast immediately
   saveFallbackRoom(updatedRoom, true);
+
+  // Step 1: Send GUEST_JOIN and MATCH_ACK sync events across all transports
   broadcastFallbackMessage({
     type: 'GUEST_JOIN',
     roomId: currentRoom.id,
@@ -691,8 +794,17 @@ export async function joinPrivateDuelRoom(
     guestSessionId: mySessionId,
   });
   broadcastFallbackMessage({
-    type: 'ROOM_SYNC',
+    type: 'MATCH_ACK',
+    roomId: currentRoom.id,
+    guestSessionId: mySessionId,
+    timestamp: Date.now(),
+  });
+  broadcastFallbackMessage({
+    type: 'MATCH_READY',
+    roomId: currentRoom.id,
     room: updatedRoom,
+    startTime,
+    hostSessionId: currentRoom.hostSessionId || '',
   });
 
   // Background update to Firestore with timeout
@@ -708,20 +820,62 @@ export async function joinPrivateDuelRoom(
   };
   applyRoomUpdates().catch(() => {});
 
-  return updatedRoom;
+  return { room: updatedRoom, startTime };
 }
 
 export function listenToPrivateRoomHost(
   roomId: string,
-  onGuestJoined: (room: GameRoom) => void
+  onGuestJoined: (room: GameRoom, startTime: number) => void
 ) {
   let hasTriggered = false;
-  const handleUpdate = (room: GameRoom) => {
+  const mySessionId = getClientSessionId();
+
+  const handleUpdate = (room: GameRoom, explicitStartTime?: number) => {
     if (hasTriggered) return;
     const hasGuest = Boolean(room.guestId && room.guestId !== '') || Boolean(room.guestSessionId && room.guestSessionId !== '');
-    if (hasGuest && (room.status === 'starting' || room.status === 'playing')) {
+    if (hasGuest && (room.status === 'starting' || room.status === 'ready' || room.status === 'playing')) {
       hasTriggered = true;
-      onGuestJoined(room);
+      const startTime =
+        explicitStartTime ||
+        (room.roundStartTime && room.roundStartTime > Date.now() ? room.roundStartTime : Date.now() + 3200);
+
+      const readyRoom: GameRoom = {
+        ...room,
+        status: 'ready',
+        hostReady: true,
+        guestReady: true,
+        roundStartTime: startTime,
+        roundStartedAt: startTime,
+        updatedAt: new Date().toISOString(),
+      };
+
+      saveFallbackRoom(readyRoom, true);
+
+      // Broadcast MATCH_READY with synchronized startTime to all tabs/devices
+      broadcastFallbackMessage({
+        type: 'MATCH_READY',
+        roomId: room.id,
+        room: readyRoom,
+        startTime,
+        hostSessionId: mySessionId,
+      });
+
+      // Update Firestore doc asynchronously
+      withTimeout(
+        updateDoc(
+          doc(db, 'gameRooms', room.id),
+          sanitizeFirestorePayload({
+            status: 'ready',
+            hostReady: true,
+            roundStartTime: startTime,
+            roundStartedAt: startTime,
+            updatedAt: new Date().toISOString(),
+          }) as Record<string, unknown>
+        ),
+        1800
+      ).catch(() => {});
+
+      onGuestJoined(readyRoom, startTime);
     }
   };
 
@@ -735,8 +889,8 @@ export function listenToPrivateRoomHost(
   const codeMatch = roomId.match(/room_code_([A-Z0-9]{6})/i);
   const currentInitial = getFallbackRoom(roomId);
   if (codeMatch && codeMatch[1] && currentInitial) {
-    unsubPeer = initHostPeer(codeMatch[1], currentInitial, (updatedRoom) => {
-      handleUpdate(updatedRoom);
+    unsubPeer = initHostPeer(codeMatch[1], currentInitial, (updatedRoom, peerStartTime) => {
+      handleUpdate(updatedRoom, peerStartTime);
     });
   }
 

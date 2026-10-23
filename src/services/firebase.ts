@@ -32,15 +32,16 @@ export interface FirebaseConfigType {
 
 export function getActiveFirebaseConfig(): FirebaseConfigType {
   // 1. Resolve base configuration with environment variable overrides
+  const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : ({} as Record<string, string>);
   const resolvedBase: FirebaseConfigType = {
-    apiKey: (import.meta.env.VITE_FIREBASE_API_KEY as string) || (baseFirebaseConfig as FirebaseConfigType).apiKey || '',
-    authDomain: (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string) || (baseFirebaseConfig as FirebaseConfigType).authDomain || '',
-    projectId: (import.meta.env.VITE_FIREBASE_PROJECT_ID as string) || (baseFirebaseConfig as FirebaseConfigType).projectId || '',
-    storageBucket: (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string) || (baseFirebaseConfig as FirebaseConfigType).storageBucket || '',
-    messagingSenderId: (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string) || (baseFirebaseConfig as FirebaseConfigType).messagingSenderId || '',
-    appId: (import.meta.env.VITE_FIREBASE_APP_ID as string) || (baseFirebaseConfig as FirebaseConfigType).appId || '',
-    measurementId: (import.meta.env.VITE_FIREBASE_MEASUREMENT_ID as string) || (baseFirebaseConfig as FirebaseConfigType).measurementId || '',
-    firestoreDatabaseId: (import.meta.env.VITE_FIREBASE_DATABASE_ID as string) || (baseFirebaseConfig as FirebaseConfigType).firestoreDatabaseId || '(default)',
+    apiKey: (env.VITE_FIREBASE_API_KEY as string) || (baseFirebaseConfig as FirebaseConfigType).apiKey || '',
+    authDomain: (env.VITE_FIREBASE_AUTH_DOMAIN as string) || (baseFirebaseConfig as FirebaseConfigType).authDomain || '',
+    projectId: (env.VITE_FIREBASE_PROJECT_ID as string) || (baseFirebaseConfig as FirebaseConfigType).projectId || '',
+    storageBucket: (env.VITE_FIREBASE_STORAGE_BUCKET as string) || (baseFirebaseConfig as FirebaseConfigType).storageBucket || '',
+    messagingSenderId: (env.VITE_FIREBASE_MESSAGING_SENDER_ID as string) || (baseFirebaseConfig as FirebaseConfigType).messagingSenderId || '',
+    appId: (env.VITE_FIREBASE_APP_ID as string) || (baseFirebaseConfig as FirebaseConfigType).appId || '',
+    measurementId: (env.VITE_FIREBASE_MEASUREMENT_ID as string) || (baseFirebaseConfig as FirebaseConfigType).measurementId || '',
+    firestoreDatabaseId: (env.VITE_FIREBASE_DATABASE_ID as string) || (baseFirebaseConfig as FirebaseConfigType).firestoreDatabaseId || '(default)',
   };
 
   if (typeof window !== 'undefined') {
@@ -78,33 +79,7 @@ export function resetFirebaseConfig(): void {
 const activeConfig = getActiveFirebaseConfig();
 const app = getApps().length === 0 ? initializeApp(activeConfig) : getApps()[0];
 
-function createFirestoreInstance() {
-  const dbId =
-    activeConfig.firestoreDatabaseId && activeConfig.firestoreDatabaseId !== '(default)'
-      ? activeConfig.firestoreDatabaseId
-      : undefined;
-
-  try {
-    return dbId
-      ? initializeFirestore(
-          app,
-          {
-            experimentalAutoDetectLongPolling: true,
-            localCache: memoryLocalCache(),
-          },
-          dbId
-        )
-      : initializeFirestore(app, {
-          experimentalAutoDetectLongPolling: true,
-          localCache: memoryLocalCache(),
-        });
-  } catch {
-    return dbId ? getFirestore(app, dbId) : getFirestore(app);
-  }
-}
-
-export const db = createFirestoreInstance();
-
+export const db = getFirestore(app, activeConfig.firestoreDatabaseId || '(default)');
 export const auth = getAuth(app);
 
 export enum OperationType {
@@ -231,15 +206,22 @@ export async function runFirebaseDiagnostics(): Promise<DiagnosticResult> {
 }
 
 export async function testConnection(): Promise<boolean> {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-    return true;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
-      return false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await getDocFromServer(doc(db, 'test', 'connection'));
+      return true;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('the client is offline')) {
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1200));
+          continue;
+        }
+        console.error('Please check your Firebase configuration.');
+        return false;
+      }
+      return true;
     }
-    return true;
   }
+  return false;
 }
 testConnection().catch(() => {});
