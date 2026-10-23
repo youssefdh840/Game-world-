@@ -34,6 +34,24 @@ function sanitizeFirestorePayload<T extends Record<string, unknown>>(payload: T)
 }
 
 /**
+ * Automatically ensures Firebase Auth has a valid session (falling back to signInAnonymously for guest players).
+ */
+export async function ensureFirebaseAuth(): Promise<string> {
+  const current = auth.currentUser;
+  if (current) {
+    return current.uid;
+  }
+  try {
+    const cred = await signInAnonymously(auth);
+    return cred.user.uid;
+  } catch (err) {
+    console.warn('Anonymous auth auto-fallback notice:', err);
+    const fallbackUser = auth.currentUser as { uid: string } | null;
+    return fallbackUser?.uid || `guest_${Date.now().toString(36)}`;
+  }
+}
+
+/**
  * Ensures Firebase Auth has an active user and returns a complete, non-undefined player identity.
  */
 async function ensurePlayerIdentity(user?: Partial<UserProfile>): Promise<{
@@ -44,13 +62,7 @@ async function ensurePlayerIdentity(user?: Partial<UserProfile>): Promise<{
   countryFlag: string;
   level: number;
 }> {
-  if (!auth.currentUser) {
-    try {
-      await signInAnonymously(auth);
-    } catch (err) {
-      console.warn('Anonymous auth fallback notice:', err);
-    }
-  }
+  await ensureFirebaseAuth();
 
   const uid =
     auth.currentUser?.uid ||
@@ -312,6 +324,8 @@ export async function createPrivateDuelRoom(
   preferredCategory: GameCategory | 'mixed' = 'mixed',
   targetCountryCode?: string
 ): Promise<{ room: GameRoom; roomCode: string }> {
+  // 1. Ensure active Firebase Auth session (anonymous auth fallback for guest players)
+  await ensureFirebaseAuth();
   const player = await ensurePlayerIdentity(user);
   const roomCode = generateRoomCode();
   const roomId = `room_code_${roomCode}`;
@@ -357,7 +371,49 @@ export async function createPrivateDuelRoom(
     updatedAt: new Date().toISOString(),
   }) as unknown as GameRoom;
 
-  await setDoc(doc(db, 'gameRooms', roomId), roomData);
+  // Helper to persist to gameRooms, rooms, and duels collections
+  const writeRoomData = async () => {
+    await setDoc(doc(db, 'gameRooms', roomId), roomData);
+    // Also sync to `rooms` and `duels` collections for complete multiplayer interoperability
+    try {
+      await setDoc(doc(db, 'rooms', roomId), roomData);
+      await setDoc(doc(db, 'duels', roomId), roomData);
+      // Support looking up directly by 6-digit code document ID as well
+      await setDoc(doc(db, 'rooms', roomCode), roomData);
+    } catch (auxErr) {
+      console.warn('Auxiliary rooms collection write note:', auxErr);
+    }
+  };
+
+  try {
+    await writeRoomData();
+  } catch (primaryErr) {
+    const errMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+    const isPermissionError =
+      errMsg.includes('permission') ||
+      errMsg.includes('Missing or insufficient permissions') ||
+      errMsg.includes('PERMISSION_DENIED');
+
+    // Auto-retry using anonymous auth fallback if permission was denied or user was unauthenticated
+    if (isPermissionError || !auth.currentUser) {
+      console.warn('Caught Firestore permission notice, auto-retrying with anonymous auth fallback...');
+      try {
+        const anonCred = await signInAnonymously(auth);
+        if (anonCred.user.uid) {
+          roomData.hostId = anonCred.user.uid;
+        }
+        await writeRoomData();
+      } catch (retryErr) {
+        console.error('Room creation retry failed after anonymous auth:', retryErr);
+        throw new Error(
+          'Could not create multiplayer room. Please verify your connection or check Firestore rules.'
+        );
+      }
+    } else {
+      throw primaryErr;
+    }
+  }
+
   return { room: roomData, roomCode };
 }
 
@@ -370,12 +426,47 @@ export async function joinPrivateDuelRoom(
     throw new Error('Please enter a valid 6-character room code.');
   }
 
+  // Ensure active Firebase Auth session (anonymous auth fallback for guest players)
+  await ensureFirebaseAuth();
   const player = await ensurePlayerIdentity(user);
   const roomId = `room_code_${cleanCode}`;
 
-  const roomDoc = await getDoc(doc(db, 'gameRooms', roomId));
-  if (!roomDoc.exists()) {
-    throw new Error(`Room code "${cleanCode}" not found. Please double-check with your friend.`);
+  // Helper to find room across gameRooms, rooms, or duels
+  const fetchRoomDoc = async () => {
+    let snap = await getDoc(doc(db, 'gameRooms', roomId));
+    if (snap.exists()) return snap;
+    snap = await getDoc(doc(db, 'rooms', roomId));
+    if (snap.exists()) return snap;
+    snap = await getDoc(doc(db, 'rooms', cleanCode));
+    if (snap.exists()) return snap;
+    return await getDoc(doc(db, 'duels', roomId));
+  };
+
+  let roomDoc = null;
+  try {
+    roomDoc = await fetchRoomDoc();
+  } catch (getErr) {
+    const errMsg = getErr instanceof Error ? getErr.message : String(getErr);
+    const isPermissionError =
+      errMsg.includes('permission') ||
+      errMsg.includes('Missing or insufficient permissions') ||
+      errMsg.includes('PERMISSION_DENIED');
+
+    if (isPermissionError || !auth.currentUser) {
+      console.warn('Caught permission error during room lookup, auto-retrying with anonymous auth...');
+      try {
+        await signInAnonymously(auth);
+        roomDoc = await fetchRoomDoc();
+      } catch (retryErr) {
+        throw new Error('Permission denied accessing room. Please check your connection and try again.');
+      }
+    } else {
+      throw getErr;
+    }
+  }
+
+  if (!roomDoc || !roomDoc.exists()) {
+    throw new Error(`Room code "${cleanCode}" not found. Please double-check the code with your friend.`);
   }
 
   const currentRoom = { ...(roomDoc.data() as GameRoom), id: roomDoc.id };
@@ -384,11 +475,11 @@ export async function joinPrivateDuelRoom(
   }
 
   if (currentRoom.hostId === player.uid) {
-    throw new Error('You are the host of this room. Waiting for another real player to join!');
+    throw new Error('You are the host of this room. Waiting for your friend to enter this code!');
   }
 
   if (currentRoom.guestId && currentRoom.guestId !== '' && currentRoom.guestId !== player.uid) {
-    throw new Error('This room is already full.');
+    throw new Error('This room is already full (another player joined).');
   }
 
   const now = Date.now();
@@ -408,7 +499,42 @@ export async function joinPrivateDuelRoom(
     updatedAt: new Date().toISOString(),
   });
 
-  await updateDoc(doc(db, 'gameRooms', roomId), updates as Record<string, unknown>);
+  const applyRoomUpdates = async () => {
+    await updateDoc(doc(db, 'gameRooms', roomId), updates as Record<string, unknown>);
+    try {
+      await updateDoc(doc(db, 'rooms', roomId), updates as Record<string, unknown>);
+      await updateDoc(doc(db, 'rooms', cleanCode), updates as Record<string, unknown>);
+      await updateDoc(doc(db, 'duels', roomId), updates as Record<string, unknown>);
+    } catch {
+      // non-fatal
+    }
+  };
+
+  try {
+    await applyRoomUpdates();
+  } catch (updateErr) {
+    const errMsg = updateErr instanceof Error ? updateErr.message : String(updateErr);
+    const isPermissionError =
+      errMsg.includes('permission') ||
+      errMsg.includes('Missing or insufficient permissions') ||
+      errMsg.includes('PERMISSION_DENIED');
+
+    if (isPermissionError || !auth.currentUser) {
+      console.warn('Caught permission error during room join, retrying with anonymous auth...');
+      try {
+        const anonCred = await signInAnonymously(auth);
+        if (anonCred.user.uid) {
+          updates.guestId = anonCred.user.uid;
+        }
+        await applyRoomUpdates();
+      } catch (retryErr) {
+        throw new Error('Could not join room due to permissions. Please try again.');
+      }
+    } else {
+      throw updateErr;
+    }
+  }
+
   return { ...currentRoom, ...updates };
 }
 

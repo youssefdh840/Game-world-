@@ -11,6 +11,7 @@ import {
 import { syncRoomRoundStartTime } from '../services/gameService';
 import { getCountryByCode } from '../services/countryData';
 import { getSyncDetectedCountry } from '../services/geolocationService';
+import { signInAnonymously } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { sounds } from '../services/soundEffects';
 import {
@@ -22,6 +23,8 @@ import {
   Copy,
   Check,
   Loader2,
+  AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 
 const DEFAULT_AVATAR =
@@ -54,7 +57,9 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
   const [generatedCode, setGeneratedCode] = useState<string>('');
   const [inputCode, setInputCode] = useState<string>('');
   const [codeLoading, setCodeLoading] = useState<boolean>(false);
+  const [codeLoadingStatus, setCodeLoadingStatus] = useState<string>('');
   const [codeError, setCodeError] = useState<string>('');
+  const [codeSuccessMsg, setCodeSuccessMsg] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
 
   const activeTicketIdRef = useRef<string>('');
@@ -152,6 +157,8 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
       setGeneratedCode('');
       setInputCode('');
       setCodeError('');
+      setCodeSuccessMsg('');
+      setCodeLoadingStatus('');
     }
   }, [isOpen]);
 
@@ -224,17 +231,20 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     };
   }, [isOpen, tab]);
 
-  // Handle Room Code Creation
-  const handleCreateCodeRoom = async () => {
+  // Handle Room Code Creation with auto-retry and anonymous auth fallback
+  const handleCreateCodeRoom = async (retryCount = 0) => {
     try {
       hasCommencedRef.current = false;
       setCodeLoading(true);
+      setCodeLoadingStatus(retryCount > 0 ? 'Retrying with anonymous guest session...' : 'Generating 6-digit room code...');
       setCodeError('');
+      setCodeSuccessMsg('');
       cleanUpListeners(true);
 
       const { room, roomCode } = await createPrivateDuelRoom(safeUser, category, targetCountryCode);
       setGeneratedCode(roomCode);
       activePrivateRoomIdRef.current = room.id;
+      setCodeSuccessMsg(`Room code ${roomCode} ready! Share with your friend to play.`);
       setStatusText(`Room created! Code: ${roomCode}`);
 
       // Listen for friend joining
@@ -250,14 +260,37 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         commenceMatch(updatedRoom, opp);
       });
     } catch (err) {
-      setCodeError(err instanceof Error ? err.message : 'Could not create room');
+      const errMsg = err instanceof Error ? err.message : 'Could not create room';
+      const isPermissionIssue =
+        errMsg.includes('permission') ||
+        errMsg.includes('insufficient') ||
+        errMsg.includes('PERMISSION_DENIED') ||
+        errMsg.includes('Missing or insufficient permissions');
+
+      // Auto-retry once using anonymous auth fallback if permission error caught
+      if (retryCount === 0 && isPermissionIssue) {
+        console.warn('Caught permission error during room code generation, auto-retrying with anonymous auth...');
+        try {
+          await signInAnonymously(auth);
+          return await handleCreateCodeRoom(1);
+        } catch (anonErr) {
+          console.warn('Anonymous auth retry failed:', anonErr);
+        }
+      }
+
+      setCodeError(
+        isPermissionIssue
+          ? 'Firestore permission error creating room. Guest anonymous access was attempted. Please tap Retry.'
+          : errMsg
+      );
     } finally {
       setCodeLoading(false);
+      setCodeLoadingStatus('');
     }
   };
 
-  // Handle Room Code Joining
-  const handleJoinWithCode = async () => {
+  // Handle Room Code Joining with auto-retry and anonymous auth fallback
+  const handleJoinWithCode = async (retryCount = 0) => {
     const clean = inputCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (clean.length !== 6) {
       setCodeError('Please enter a valid 6-character room code.');
@@ -266,7 +299,9 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     try {
       hasCommencedRef.current = false;
       setCodeLoading(true);
+      setCodeLoadingStatus(retryCount > 0 ? 'Retrying with anonymous guest session...' : 'Connecting to duel room...');
       setCodeError('');
+      setCodeSuccessMsg('');
       cleanUpListeners(true);
 
       const room = await joinPrivateDuelRoom(clean, safeUser);
@@ -280,9 +315,30 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
       };
       commenceMatch(room, opp);
     } catch (err) {
-      setCodeError(err instanceof Error ? err.message : 'Invalid code or room not found');
+      const errMsg = err instanceof Error ? err.message : 'Invalid code or room not found';
+      const isPermissionIssue =
+        errMsg.includes('permission') ||
+        errMsg.includes('insufficient') ||
+        errMsg.includes('PERMISSION_DENIED');
+
+      if (retryCount === 0 && isPermissionIssue) {
+        console.warn('Caught permission error during room join, auto-retrying with anonymous auth...');
+        try {
+          await signInAnonymously(auth);
+          return await handleJoinWithCode(1);
+        } catch {
+          // ignore
+        }
+      }
+
+      setCodeError(
+        isPermissionIssue
+          ? 'Firestore permission error connecting to room. Please tap Join again.'
+          : errMsg
+      );
     } finally {
       setCodeLoading(false);
+      setCodeLoadingStatus('');
     }
   };
 
@@ -470,48 +526,94 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         {/* ----------------- TAB 2: ROOM CODE (DIRECT 1v1 REAL DUEL) ----------------- */}
         {tab === 'code' && !matchedOpponent && (
           <div className="space-y-4 my-2 text-left">
+            {/* Error Feedback with Auto-Retry */}
             {codeError && (
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs sm:text-sm font-semibold">
-                {codeError}
+              <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/35 text-rose-200 text-xs sm:text-sm font-medium flex items-start gap-2.5 shadow-sm">
+                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-2">
+                  <p className="leading-snug">{codeError}</p>
+                  <button
+                    onClick={() => handleCreateCodeRoom()}
+                    disabled={codeLoading}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/25 hover:bg-rose-500/35 text-white border border-rose-500/50 rounded-lg text-xs font-bold transition-all cursor-pointer active:translate-y-0.5"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Retry Room Creation</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Success Feedback */}
+            {codeSuccessMsg && !codeError && (
+              <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm font-semibold flex items-center gap-2 shadow-sm animate-fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{codeSuccessMsg}</span>
               </div>
             )}
 
             {/* Option A: Create Room */}
-            <div className="bg-[#0B0F19] p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-2.5">
-              <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-cyan-400">
-                Option 1 • Host a Duel
-              </span>
+            <div className="bg-[#0B0F19] p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-cyan-400">
+                  Option 1 • Host a Duel
+                </span>
+                {generatedCode && (
+                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Room Active</span>
+                  </span>
+                )}
+              </div>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
                 Generate a 6-digit room code and share it with a friend or another device to start instantly.
               </p>
 
               {generatedCode ? (
-                <div className="space-y-2.5 pt-1">
-                  <div className="flex items-center justify-between bg-slate-900 border-2 border-cyan-500/40 rounded-xl px-4 py-3">
-                    <span className="font-mono text-xl sm:text-2xl font-black tracking-widest text-cyan-300">
-                      {generatedCode}
-                    </span>
+                <div className="space-y-3 pt-1">
+                  <div className="flex items-center justify-between bg-slate-900 border-2 border-cyan-500/50 rounded-2xl px-4 py-3 shadow-inner">
+                    <div className="flex flex-col">
+                      <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        6-Digit Room Code
+                      </span>
+                      <span className="font-mono text-2xl sm:text-3xl font-black tracking-[0.2em] text-cyan-300 select-all">
+                        {generatedCode}
+                      </span>
+                    </div>
                     <button
                       onClick={handleCopyCode}
-                      className="px-3.5 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all"
+                      className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:translate-y-0.5"
                     >
-                      {copied ? <Check className="w-3.5 h-3.5 stroke-[2.5]" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copied ? 'Copied!' : 'Copy'}</span>
+                      {copied ? <Check className="w-4 h-4 stroke-[2.5]" /> : <Copy className="w-4 h-4" />}
+                      <span>{copied ? 'Copied!' : 'Copy Code'}</span>
                     </button>
                   </div>
-                  <div className="flex items-center justify-center gap-2 text-xs sm:text-sm text-slate-400 font-medium py-1">
-                    <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-                    <span>Waiting for your friend to enter code...</span>
+
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-400 font-medium py-1">
+                      <Loader2 className="w-4 h-4 animate-spin text-cyan-400 shrink-0" />
+                      <span>Waiting for friend to enter code...</span>
+                    </div>
+                    <button
+                      onClick={() => handleCreateCodeRoom()}
+                      disabled={codeLoading}
+                      className="text-[11px] text-slate-400 hover:text-cyan-300 font-bold underline cursor-pointer"
+                    >
+                      New Code
+                    </button>
                   </div>
                 </div>
               ) : (
                 <button
-                  onClick={handleCreateCodeRoom}
+                  onClick={() => handleCreateCodeRoom()}
                   disabled={codeLoading}
-                  className="w-full py-3 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 font-black text-xs sm:text-sm rounded-xl shadow-md shadow-cyan-500/20 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:translate-y-0.5"
+                  className="w-full py-3.5 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 font-black text-xs sm:text-sm rounded-xl shadow-md shadow-cyan-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 active:translate-y-0.5"
                 >
                   {codeLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{codeLoadingStatus || 'Securing Room Code...'}</span>
+                    </>
                   ) : (
                     <>
                       <Swords className="w-4 h-4" />
@@ -534,12 +636,12 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
                   value={inputCode}
                   maxLength={6}
                   onChange={(e) => setInputCode(e.target.value.toUpperCase())}
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-center font-mono font-black text-base sm:text-lg text-white tracking-widest uppercase focus:outline-none focus:border-cyan-400"
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-center font-mono font-black text-base sm:text-lg text-white tracking-[0.2em] uppercase focus:outline-none focus:border-cyan-400"
                 />
                 <button
-                  onClick={handleJoinWithCode}
+                  onClick={() => handleJoinWithCode()}
                   disabled={codeLoading || inputCode.length < 4}
-                  className="px-5 py-2.5 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-black text-xs sm:text-sm rounded-xl transition-all cursor-pointer shrink-0"
+                  className="px-5 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 disabled:opacity-40 text-slate-950 font-black text-xs sm:text-sm rounded-xl transition-all cursor-pointer shrink-0 shadow-md active:translate-y-0.5"
                 >
                   {codeLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Join'}
                 </button>

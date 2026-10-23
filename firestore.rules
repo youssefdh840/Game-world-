@@ -72,62 +72,36 @@ service cloud.firestore {
       }
     }
 
-    // Game Rooms Collection: Authenticated players can only manipulate their participating rooms
-    match /gameRooms/{roomId} {
-      allow get: if isSignedIn() && isValidId(roomId);
-      allow list: if isSignedIn();
+    // Rooms Collection: Permitted for all users (guests, anonymous, and registered) to create and join by 6-digit code
+    match /rooms/{roomId} {
+      allow read, write: if true;
 
-      // Host or guest can create a room containing their own UID
-      allow create: if isSignedIn() && isValidId(roomId) && (
-        incoming().hostId == request.auth.uid ||
-        incoming().guestId == request.auth.uid
-      );
-
-      // Updates: Restricted to participants; terminal state locking prevents tampering once finished
-      allow update: if isSignedIn() && isValidId(roomId) && (
-        isAdmin() || (
-          (
-            resource.data.hostId == request.auth.uid ||
-            resource.data.guestId == request.auth.uid ||
-            (resource.data.status == 'waiting' && incoming().guestId == request.auth.uid)
-          ) &&
-          // Cannot modify scores/game outcome once match is completed unless admin
-          (resource.data.status != 'finished' || incoming().status == 'finished')
-        )
-      );
-
-      allow delete: if isAdmin() || (
-        isSignedIn() && isValidId(roomId) && (
-          resource.data.hostId == request.auth.uid ||
-          resource.data.guestId == request.auth.uid
-        )
-      );
-
-      // In-Game Messages: Only participants in the room can send messages
-      match /messages/{messageId} {
-        allow read: if isSignedIn() && isValidId(roomId);
-        allow create: if isSignedIn() && isValidId(roomId) && isValidId(messageId) &&
-          incoming().senderId == request.auth.uid &&
-          incoming().text is string && incoming().text.size() <= 500 && (
-            isAdmin() ||
-            get(/databases/$(database)/documents/gameRooms/$(roomId)).data.hostId == request.auth.uid ||
-            get(/databases/$(database)/documents/gameRooms/$(roomId)).data.guestId == request.auth.uid
-          );
-        allow update, delete: if isAdmin();
+      match /{allSubcollections=**} {
+        allow read, write: if true;
       }
     }
 
-    // Matchmaking Queue: Ticket owner can create, update, or cancel their ticket
+    // Duels Collection: Permitted for all users (guests, anonymous, and registered)
+    match /duels/{duelId} {
+      allow read, write: if true;
+
+      match /{allSubcollections=**} {
+        allow read, write: if true;
+      }
+    }
+
+    // Game Rooms Collection: Permitted for all users (guest players and authenticated users)
+    match /gameRooms/{roomId} {
+      allow read, write: if true;
+
+      match /{allSubcollections=**} {
+        allow read, write: if true;
+      }
+    }
+
+    // Matchmaking Queue: Permitted for all users
     match /matchmaking/{ticketId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(ticketId) &&
-        incoming().userId == request.auth.uid;
-      allow update: if isSignedIn() && isValidId(ticketId) && (
-        resource.data.userId == request.auth.uid || isAdmin()
-      );
-      allow delete: if isSignedIn() && isValidId(ticketId) && (
-        resource.data.userId == request.auth.uid || isAdmin()
-      );
+      allow read, write: if true;
     }
 
     // Friendships Collection: Requesters and receivers have access

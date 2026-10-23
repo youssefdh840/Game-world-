@@ -206,6 +206,14 @@
       "schema": "GameRoom",
       "description": "Real-time game sessions between two players"
     },
+    "/rooms/{roomId}": {
+      "schema": "GameRoom",
+      "description": "Multiplayer rooms accessible by 6-digit room code for all users"
+    },
+    "/duels/{duelId}": {
+      "schema": "GameRoom",
+      "description": "Multiplayer 1v1 duels for all users"
+    },
     "/gameRooms/{roomId}/messages/{messageId}": {
       "schema": "ChatMessage",
       "description": "In-game chat messages"

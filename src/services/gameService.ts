@@ -65,7 +65,15 @@ function sanitizeUpdates<T extends Record<string, unknown>>(updates: T): T {
 export async function getGameRoom(roomId: string): Promise<GameRoom | null> {
   if (!roomId) return null;
   try {
-    const snap = await getDoc(doc(db, 'gameRooms', roomId));
+    let snap = await getDoc(doc(db, 'gameRooms', roomId));
+    if (snap.exists()) {
+      return { ...(snap.data() as GameRoom), id: snap.id };
+    }
+    snap = await getDoc(doc(db, 'rooms', roomId));
+    if (snap.exists()) {
+      return { ...(snap.data() as GameRoom), id: snap.id };
+    }
+    snap = await getDoc(doc(db, 'duels', roomId));
     if (snap.exists()) {
       return { ...(snap.data() as GameRoom), id: snap.id };
     }
