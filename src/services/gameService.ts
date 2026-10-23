@@ -172,13 +172,22 @@ export async function submitPlayerAnswer(
   timeTakenMs: number,
   isCorrect: boolean,
   room: GameRoom,
-  overridePoints?: number
+  overridePoints?: number,
+  isHostOverride?: boolean
 ) {
   if (!roomId || roomId.startsWith('room_bot_')) {
     return;
   }
   const activeUid = auth.currentUser?.uid || userId;
-  const isHost = room.hostId === activeUid || room.hostId === userId;
+  const mySessionId = typeof window !== 'undefined' ? sessionStorage.getItem('wc_client_session_id') : null;
+  const isHost =
+    typeof isHostOverride === 'boolean'
+      ? isHostOverride
+      : (room.hostSessionId && mySessionId)
+      ? room.hostSessionId === mySessionId
+      : (room.guestSessionId && mySessionId)
+      ? room.guestSessionId !== mySessionId
+      : (room.hostId === activeUid || room.hostId === userId);
   const roundDurationMs =
     room.gameMode === 'word_scramble'
       ? WORD_SCRAMBLE_DURATION_MS

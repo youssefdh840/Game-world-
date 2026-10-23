@@ -56,6 +56,8 @@ import {
   Check,
 } from 'lucide-react';
 
+import { getClientSessionId } from '../services/matchmakingService';
+
 interface GameRoomScreenProps {
   initialRoom: GameRoom;
   user: UserProfile;
@@ -70,6 +72,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   onRematch,
 }) => {
   const effectiveUid = auth.currentUser?.uid || user.uid;
+  const clientTabSessionId = getClientSessionId();
   const [room, setRoom] = useState<GameRoom>(initialRoom);
   const isMemoryMatch =
     room.gameMode === 'memory_match' ||
@@ -103,7 +106,11 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const [hasAnswered, setHasAnswered] = useState<boolean>(false);
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
   const [isHost, setIsHost] = useState<boolean>(
-    initialRoom.hostId === effectiveUid || initialRoom.hostId === user.uid
+    initialRoom.hostSessionId
+      ? initialRoom.hostSessionId === clientTabSessionId
+      : initialRoom.guestSessionId
+      ? initialRoom.guestSessionId !== clientTabSessionId
+      : (initialRoom.hostId === effectiveUid || initialRoom.hostId === user.uid)
   );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
@@ -205,7 +212,13 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   // Subscribe to real-time room updates and chat
   useEffect(() => {
     const activeUid = auth.currentUser?.uid || user.uid;
-    setIsHost(room.hostId === activeUid || room.hostId === user.uid);
+    const tabSid = getClientSessionId();
+    const currentIsHost = room.hostSessionId
+      ? room.hostSessionId === tabSid
+      : room.guestSessionId
+      ? room.guestSessionId !== tabSid
+      : (room.hostId === activeUid || room.hostId === user.uid);
+    setIsHost(currentIsHost);
     const unsubRoom = subscribeToGameRoom(room.id, (updated) => {
       setRoom(updated);
       if (
@@ -856,7 +869,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         timeTaken,
         true,
         roomRef.current,
-        pointsEarned
+        pointsEarned,
+        isHostPlayer
       );
     } else {
       // Incorrect sequence: allow player to clear and retry before time expires!
@@ -968,7 +982,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     });
 
     const activeUid = auth.currentUser?.uid || user.uid;
-    submitPlayerAnswer(room.id, activeUid, option, timeTaken, isCorrect, roomRef.current);
+    submitPlayerAnswer(room.id, activeUid, option, timeTaken, isCorrect, roomRef.current, pointsEarned, isHostPlayer);
   };
 
   const hasAwardedRef = useRef<boolean>(false);

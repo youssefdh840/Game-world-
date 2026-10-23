@@ -34,6 +34,24 @@ function sanitizeFirestorePayload<T extends Record<string, unknown>>(payload: T)
 }
 
 /**
+ * Returns a persistent tab session ID stored in sessionStorage to cleanly isolate
+ * different browser windows or tabs when testing multiplayer on the same machine.
+ */
+export function getClientSessionId(): string {
+  if (typeof window === 'undefined') return 'server_session';
+  try {
+    let sid = sessionStorage.getItem('wc_client_session_id');
+    if (!sid) {
+      sid = `tab_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
+      sessionStorage.setItem('wc_client_session_id', sid);
+    }
+    return sid;
+  } catch {
+    return `tab_${Date.now().toString(36)}`;
+  }
+}
+
+/**
  * Automatically ensures Firebase Auth has a valid session (falling back to signInAnonymously for guest players).
  */
 export async function ensureFirebaseAuth(): Promise<string> {
@@ -47,7 +65,7 @@ export async function ensureFirebaseAuth(): Promise<string> {
   } catch (err) {
     console.warn('Anonymous auth auto-fallback notice:', err);
     const fallbackUser = auth.currentUser as { uid: string } | null;
-    return fallbackUser?.uid || `guest_${Date.now().toString(36)}`;
+    return fallbackUser?.uid || `guest_${getClientSessionId()}`;
   }
 }
 
@@ -127,8 +145,18 @@ export async function joinMatchmakingQueue(
   preferredCategory: GameCategory | 'mixed' = 'cultural_quiz',
   targetCountryCode?: string
 ): Promise<JoinQueueResult> {
+  await ensureFirebaseAuth();
   const player = await ensurePlayerIdentity(user);
+  const mySessionId = getClientSessionId();
   const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
+
+  const normalizeMode = (mode?: string) => {
+    if (mode === 'word_scramble') return 'word_scramble';
+    if (mode === 'guess_number') return 'guess_number';
+    if (mode === 'memory_match') return 'memory_match';
+    return 'cultural_quiz';
+  };
+  const requestedModeGroup = normalizeMode(preferredCategory);
 
   // 1. Check if another real player already has an open waiting room in gameRooms
   try {
@@ -138,18 +166,13 @@ export async function joinMatchmakingQueue(
     );
     const snap = await getDocs(q);
 
-    // Find a valid waiting room created by another real player (not ourselves, not already joined, not expired)
-    const normalizeMode = (mode?: string) => {
-      if (mode === 'word_scramble') return 'word_scramble';
-      if (mode === 'guess_number') return 'guess_number';
-      if (mode === 'memory_match') return 'memory_match';
-      return 'cultural_quiz';
-    };
-    const requestedModeGroup = normalizeMode(preferredCategory);
+    // Find a valid waiting room created by another real player (not our tab session, not already joined, not expired)
     const openRooms = snap.docs
       .map((d) => ({ ...(d.data() as GameRoom), id: d.id }))
       .filter((r) => {
-        if (!r.id || !r.hostId || r.hostId === player.uid) return false;
+        if (!r.id || !r.hostId) return false;
+        const isMyRoom = r.hostSessionId ? r.hostSessionId === mySessionId : r.hostId === player.uid;
+        if (isMyRoom) return false;
         if (r.guestId && r.guestId !== '') return false;
         const createdMs = new Date(r.createdAt).getTime();
         if (isNaN(createdMs) || createdMs < threeMinutesAgo) return false;
@@ -163,6 +186,7 @@ export async function joinMatchmakingQueue(
 
       const updates: Partial<GameRoom> = sanitizeFirestorePayload({
         guestId: player.uid,
+        guestSessionId: mySessionId,
         guestUsername: player.username,
         guestCountryCode: player.countryCode,
         guestCountryFlag: player.countryFlag,
@@ -177,6 +201,11 @@ export async function joinMatchmakingQueue(
 
       // Join the room as guest and advance status to 'starting'
       await updateDoc(doc(db, 'gameRooms', waitingRoom.id), updates as Record<string, unknown>);
+      try {
+        await updateDoc(doc(db, 'rooms', waitingRoom.id), updates as Record<string, unknown>);
+      } catch {
+        // non-fatal
+      }
 
       const matchedRoom: GameRoom = { ...waitingRoom, ...updates };
 
@@ -194,7 +223,6 @@ export async function joinMatchmakingQueue(
   // 2. No open waiting room: Player 1 creates a new room document in Firestore with status 'waiting'
   const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-  // Fetch questions for this match (1 round for Memory Match, 3 rounds for Guess the Number, 5 rounds otherwise)
   const roundCount = preferredCategory === 'memory_match' ? 1 : preferredCategory === 'guess_number' ? 3 : 5;
   const questions = await fetchDynamicGameQuestions({
     count: roundCount,
@@ -207,6 +235,7 @@ export async function joinMatchmakingQueue(
   const roomData: GameRoom = sanitizeFirestorePayload({
     id: roomId,
     hostId: player.uid,
+    hostSessionId: mySessionId,
     hostUsername: player.username,
     hostCountryCode: player.countryCode,
     hostCountryFlag: player.countryFlag,
@@ -215,6 +244,7 @@ export async function joinMatchmakingQueue(
     hostReady: true,
 
     guestId: '',
+    guestSessionId: '',
     guestUsername: '',
     guestCountryCode: '',
     guestCountryFlag: '',
@@ -239,6 +269,11 @@ export async function joinMatchmakingQueue(
 
   try {
     await setDoc(doc(db, 'gameRooms', roomId), roomData);
+    try {
+      await setDoc(doc(db, 'rooms', roomId), roomData);
+    } catch {
+      // non-fatal
+    }
   } catch (error) {
     console.warn('Could not create waiting game room in Firestore:', error);
   }
@@ -247,23 +282,32 @@ export async function joinMatchmakingQueue(
     roomId,
     isHost: true,
     unsubscribe: () => {
-      // If Player 1 cancels search, clean up the waiting room
+      // Clean up waiting room if cancelled
       deleteDoc(doc(db, 'gameRooms', roomId)).catch(() => {});
+      deleteDoc(doc(db, 'rooms', roomId)).catch(() => {});
     },
   };
 }
 
-// Listens to room updates when another real player joins our waiting room
+// Listens to room updates when another real player joins our waiting room, with active pairing loop
 export function listenToMatchmakingRoom(
   roomId: string,
-  onMatched: (room: GameRoom) => void
+  onMatched: (room: GameRoom) => void,
+  user?: UserProfile,
+  preferredCategory: GameCategory | 'mixed' = 'cultural_quiz'
 ) {
-  return onSnapshot(
+  let isDone = false;
+  const mySessionId = getClientSessionId();
+
+  // 1. Primary snapshot listener on our waiting room
+  const unsubSnap = onSnapshot(
     doc(db, 'gameRooms', roomId),
     (snap) => {
+      if (isDone) return;
       if (snap.exists()) {
         const room = { ...(snap.data() as GameRoom), id: snap.id };
         if (room.guestId && (room.status === 'starting' || room.status === 'playing')) {
+          isDone = true;
           onMatched(room);
         }
       }
@@ -272,6 +316,88 @@ export function listenToMatchmakingRoom(
       console.warn(`Matchmaking room listen notice (${roomId}):`, error);
     }
   );
+
+  // 2. Active pairing loop (every 1.8 seconds): if another player entered and created a room concurrently,
+  // tie-break by ID so both players pair immediately instead of waiting indefinitely
+  const normalizeMode = (mode?: string) => {
+    if (mode === 'word_scramble') return 'word_scramble';
+    if (mode === 'guess_number') return 'guess_number';
+    if (mode === 'memory_match') return 'memory_match';
+    return 'cultural_quiz';
+  };
+  const targetMode = normalizeMode(preferredCategory);
+
+  const pollInterval = setInterval(async () => {
+    if (isDone) {
+      clearInterval(pollInterval);
+      return;
+    }
+    try {
+      const q = query(collection(db, 'gameRooms'), where('status', '==', 'waiting'));
+      const snap = await getDocs(q);
+      if (isDone) return;
+
+      const otherOpenRooms = snap.docs
+        .map((d) => ({ ...(d.data() as GameRoom), id: d.id }))
+        .filter((r) => {
+          if (!r.id || r.id === roomId) return false;
+          const isMyRoom = r.hostSessionId ? r.hostSessionId === mySessionId : (user?.uid && r.hostId === user.uid);
+          if (isMyRoom) return false;
+          if (r.guestId && r.guestId !== '') return false;
+          return normalizeMode(r.gameMode) === targetMode;
+        });
+
+      if (otherOpenRooms.length > 0) {
+        // Pick the oldest room, or if lower ID, become the guest
+        const otherRoom = otherOpenRooms[0];
+        if (otherRoom.id < roomId) {
+          isDone = true;
+          clearInterval(pollInterval);
+
+          const now = Date.now();
+          const p = user
+            ? await ensurePlayerIdentity(user)
+            : {
+                uid: auth.currentUser?.uid || `guest_${mySessionId}`,
+                username: 'Challenger',
+                countryCode: 'TN',
+                countryFlag: '🌍',
+                avatar: DEFAULT_AVATAR,
+              };
+
+          const updates: Partial<GameRoom> = sanitizeFirestorePayload({
+            guestId: p.uid,
+            guestSessionId: mySessionId,
+            guestUsername: p.username,
+            guestCountryCode: p.countryCode,
+            guestCountryFlag: p.countryFlag,
+            guestAvatar: p.avatar,
+            guestScore: 0,
+            guestReady: true,
+            status: 'starting' as const,
+            roundStartedAt: now,
+            roundStartTime: now,
+            updatedAt: new Date().toISOString(),
+          });
+
+          // Join the other room
+          await updateDoc(doc(db, 'gameRooms', otherRoom.id), updates as Record<string, unknown>);
+          // Clean up our obsolete waiting room
+          deleteDoc(doc(db, 'gameRooms', roomId)).catch(() => {});
+
+          onMatched({ ...otherRoom, ...updates });
+        }
+      }
+    } catch {
+      // non-fatal poll
+    }
+  }, 1800);
+
+  return () => {
+    isDone = true;
+    clearInterval(pollInterval);
+    unsubSnap();
+  };
 }
 
 // Alias for backwards compatibility
@@ -299,6 +425,7 @@ export async function leaveMatchmakingQueue(roomId: string) {
       // Only delete if still waiting with no guest
       if (data.status === 'waiting' && (!data.guestId || data.guestId === '')) {
         await deleteDoc(doc(db, 'gameRooms', roomId));
+        deleteDoc(doc(db, 'rooms', roomId)).catch(() => {});
       }
     }
   } catch {
@@ -327,6 +454,7 @@ export async function createPrivateDuelRoom(
   // 1. Ensure active Firebase Auth session (anonymous auth fallback for guest players)
   await ensureFirebaseAuth();
   const player = await ensurePlayerIdentity(user);
+  const mySessionId = getClientSessionId();
   const roomCode = generateRoomCode();
   const roomId = `room_code_${roomCode}`;
 
@@ -340,7 +468,9 @@ export async function createPrivateDuelRoom(
 
   const roomData: GameRoom = sanitizeFirestorePayload({
     id: roomId,
+    roomCode,
     hostId: player.uid,
+    hostSessionId: mySessionId,
     hostUsername: player.username,
     hostCountryCode: player.countryCode,
     hostCountryFlag: player.countryFlag,
@@ -349,6 +479,7 @@ export async function createPrivateDuelRoom(
     hostReady: true,
 
     guestId: '',
+    guestSessionId: '',
     guestUsername: '',
     guestCountryCode: '',
     guestCountryFlag: '',
@@ -374,7 +505,6 @@ export async function createPrivateDuelRoom(
   // Helper to persist to gameRooms, rooms, and duels collections
   const writeRoomData = async () => {
     await setDoc(doc(db, 'gameRooms', roomId), roomData);
-    // Also sync to `rooms` and `duels` collections for complete multiplayer interoperability
     try {
       await setDoc(doc(db, 'rooms', roomId), roomData);
       await setDoc(doc(db, 'duels', roomId), roomData);
@@ -394,7 +524,6 @@ export async function createPrivateDuelRoom(
       errMsg.includes('Missing or insufficient permissions') ||
       errMsg.includes('PERMISSION_DENIED');
 
-    // Auto-retry using anonymous auth fallback if permission was denied or user was unauthenticated
     if (isPermissionError || !auth.currentUser) {
       console.warn('Caught Firestore permission notice, auto-retrying with anonymous auth fallback...');
       try {
@@ -429,6 +558,7 @@ export async function joinPrivateDuelRoom(
   // Ensure active Firebase Auth session (anonymous auth fallback for guest players)
   await ensureFirebaseAuth();
   const player = await ensurePlayerIdentity(user);
+  const mySessionId = getClientSessionId();
   const roomId = `room_code_${cleanCode}`;
 
   // Helper to find room across gameRooms, rooms, or duels
@@ -474,11 +604,15 @@ export async function joinPrivateDuelRoom(
     throw new Error('This game match has already finished.');
   }
 
-  if (currentRoom.hostId === player.uid) {
-    throw new Error('You are the host of this room. Waiting for your friend to enter this code!');
+  // If hostSessionId matches our tab session, we cannot join our own room in the exact same tab
+  const isSameHostTab = currentRoom.hostSessionId
+    ? currentRoom.hostSessionId === mySessionId
+    : currentRoom.hostId === player.uid;
+  if (isSameHostTab) {
+    throw new Error('You generated this code in this tab. Share this code with a friend or open another window to test joining!');
   }
 
-  if (currentRoom.guestId && currentRoom.guestId !== '' && currentRoom.guestId !== player.uid) {
+  if (currentRoom.guestId && currentRoom.guestId !== '' && currentRoom.guestSessionId !== mySessionId) {
     throw new Error('This room is already full (another player joined).');
   }
 
@@ -487,6 +621,7 @@ export async function joinPrivateDuelRoom(
   // Join as guest — every field is guaranteed to be defined
   const updates: Partial<GameRoom> = sanitizeFirestorePayload({
     guestId: player.uid,
+    guestSessionId: mySessionId,
     guestUsername: player.username,
     guestCountryCode: player.countryCode,
     guestCountryFlag: player.countryFlag,
@@ -542,18 +677,43 @@ export function listenToPrivateRoomHost(
   roomId: string,
   onGuestJoined: (room: GameRoom) => void
 ) {
-  return onSnapshot(
+  let hasTriggered = false;
+  const handleUpdate = (room: GameRoom) => {
+    if (hasTriggered) return;
+    const hasGuest = Boolean(room.guestId && room.guestId !== '') || Boolean(room.guestSessionId && room.guestSessionId !== '');
+    if (hasGuest && (room.status === 'starting' || room.status === 'playing')) {
+      hasTriggered = true;
+      onGuestJoined(room);
+    }
+  };
+
+  const unsubGameRooms = onSnapshot(
     doc(db, 'gameRooms', roomId),
     (snap) => {
       if (snap.exists()) {
-        const room = { ...(snap.data() as GameRoom), id: snap.id };
-        if (room.guestId && (room.status === 'starting' || room.status === 'playing')) {
-          onGuestJoined(room);
-        }
+        handleUpdate({ ...(snap.data() as GameRoom), id: snap.id });
       }
     },
     (err) => {
-      console.warn('Error listening to private room:', err);
+      console.warn('GameRooms listener warning:', err);
     }
   );
+
+  const unsubRooms = onSnapshot(
+    doc(db, 'rooms', roomId),
+    (snap) => {
+      if (snap.exists()) {
+        handleUpdate({ ...(snap.data() as GameRoom), id: snap.id });
+      }
+    },
+    (err) => {
+      console.warn('Rooms listener warning:', err);
+    }
+  );
+
+  return () => {
+    hasTriggered = true;
+    unsubGameRooms();
+    unsubRooms();
+  };
 }

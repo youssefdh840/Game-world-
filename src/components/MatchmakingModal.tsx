@@ -7,6 +7,7 @@ import {
   createPrivateDuelRoom,
   joinPrivateDuelRoom,
   listenToPrivateRoomHost,
+  getClientSessionId,
 } from '../services/matchmakingService';
 import { syncRoomRoundStartTime } from '../services/gameService';
 import { getCountryByCode } from '../services/countryData';
@@ -139,7 +140,13 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
 
         // Authoritative Host activates match in Firestore
         const currentUid = auth.currentUser?.uid || safeUser.uid;
-        if (room.hostId === currentUid || room.hostId === user.uid) {
+        const mySessionId = getClientSessionId();
+        const isHost = room.hostSessionId
+          ? room.hostSessionId === mySessionId
+          : room.guestSessionId
+          ? room.guestSessionId !== mySessionId
+          : (room.hostId === currentUid || room.hostId === user.uid);
+        if (isHost) {
           syncRoomRoundStartTime(room.id, now);
         }
 
@@ -204,18 +211,23 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         }
 
         // Otherwise, wait for another real player to join our room
-        unsubRef.current = listenToMatchmakingRoom(roomId, (room) => {
-          if (isCancelled) return;
-          const opp: Partial<UserProfile> = {
-            uid: room.guestId,
-            username: room.guestUsername || 'Challenger',
-            countryCode: room.guestCountryCode || 'UN',
-            countryFlag: room.guestCountryFlag || '🌍',
-            avatar: room.guestAvatar || DEFAULT_AVATAR,
-            countryName: 'Guest',
-          };
-          commenceMatch(room, opp);
-        });
+        unsubRef.current = listenToMatchmakingRoom(
+          roomId,
+          (room) => {
+            if (isCancelled) return;
+            const opp: Partial<UserProfile> = {
+              uid: room.guestId,
+              username: room.guestUsername || 'Challenger',
+              countryCode: room.guestCountryCode || 'UN',
+              countryFlag: room.guestCountryFlag || '🌍',
+              avatar: room.guestAvatar || DEFAULT_AVATAR,
+              countryName: 'Guest',
+            };
+            commenceMatch(room, opp);
+          },
+          safeUser,
+          category
+        );
       })
       .catch((err) => {
         console.warn('Matchmaking queue error:', err);

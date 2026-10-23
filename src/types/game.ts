@@ -92,7 +92,9 @@ export type GameRoomStatus = 'waiting' | 'starting' | 'playing' | 'round_result'
 
 export interface GameRoom {
   id: string;
+  roomCode?: string;
   hostId: string;
+  hostSessionId?: string;
   hostUsername: string;
   hostCountryCode: string;
   hostCountryFlag: string;
@@ -103,6 +105,7 @@ export interface GameRoom {
   hostReady: boolean;
 
   guestId: string;
+  guestSessionId?: string;
   guestUsername: string;
   guestCountryCode: string;
   guestCountryFlag: string;
