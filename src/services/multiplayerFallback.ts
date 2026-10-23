@@ -77,12 +77,15 @@ export function broadcastFallbackMessage(msg: FallbackMessage) {
     }
   }
   // Send via active WebRTC peer connection if available
-  const conn = activePeerConnections.get(msg.roomId);
-  if (conn && conn.open) {
-    try {
-      conn.send(msg);
-    } catch {
-      // ignore
+  const targetRoomId = 'roomId' in msg ? msg.roomId : 'room' in msg ? msg.room.id : '';
+  if (targetRoomId) {
+    const conn = activePeerConnections.get(targetRoomId);
+    if (conn && conn.open) {
+      try {
+        conn.send(msg);
+      } catch {
+        // ignore
+      }
     }
   }
 }

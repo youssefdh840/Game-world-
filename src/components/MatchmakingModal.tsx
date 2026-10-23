@@ -272,29 +272,9 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
         commenceMatch(updatedRoom, opp);
       });
     } catch (err) {
+      console.warn('Room code generation notice:', err);
       const errMsg = err instanceof Error ? err.message : 'Could not create room';
-      const isPermissionIssue =
-        errMsg.includes('permission') ||
-        errMsg.includes('insufficient') ||
-        errMsg.includes('PERMISSION_DENIED') ||
-        errMsg.includes('Missing or insufficient permissions');
-
-      // Auto-retry once using anonymous auth fallback if permission error caught
-      if (retryCount === 0 && isPermissionIssue) {
-        console.warn('Caught permission error during room code generation, auto-retrying with anonymous auth...');
-        try {
-          await signInAnonymously(auth);
-          return await handleCreateCodeRoom(1);
-        } catch (anonErr) {
-          console.warn('Anonymous auth retry failed:', anonErr);
-        }
-      }
-
-      setCodeError(
-        isPermissionIssue
-          ? 'Firestore permission error creating room. Guest anonymous access was attempted. Please tap Retry.'
-          : errMsg
-      );
+      setCodeError(errMsg || 'Room creation delayed. Please tap Generate Room Code again.');
     } finally {
       setCodeLoading(false);
       setCodeLoadingStatus('');
@@ -327,27 +307,9 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
       };
       commenceMatch(room, opp);
     } catch (err) {
+      console.warn('Room code join notice:', err);
       const errMsg = err instanceof Error ? err.message : 'Invalid code or room not found';
-      const isPermissionIssue =
-        errMsg.includes('permission') ||
-        errMsg.includes('insufficient') ||
-        errMsg.includes('PERMISSION_DENIED');
-
-      if (retryCount === 0 && isPermissionIssue) {
-        console.warn('Caught permission error during room join, auto-retrying with anonymous auth...');
-        try {
-          await signInAnonymously(auth);
-          return await handleJoinWithCode(1);
-        } catch {
-          // ignore
-        }
-      }
-
-      setCodeError(
-        isPermissionIssue
-          ? 'Firestore permission error connecting to room. Please tap Join again.'
-          : errMsg
-      );
+      setCodeError(errMsg || 'Could not find or join room. Please verify the code with your friend.');
     } finally {
       setCodeLoading(false);
       setCodeLoadingStatus('');

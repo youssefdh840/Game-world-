@@ -14,6 +14,13 @@ import {
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { GameRoom, ChatMessage, ReportItem } from '../types/game';
 import {
+  getFallbackRoom,
+  updateFallbackRoom,
+  saveFallbackRoom,
+  subscribeToFallbackRoom,
+  broadcastFallbackMessage,
+} from './multiplayerFallback';
+import {
   fetchDynamicGameQuestions,
   recordQuestionsAnsweredInSession,
   clearSessionQuestionHistory,
@@ -77,11 +84,10 @@ export async function getGameRoom(roomId: string): Promise<GameRoom | null> {
     if (snap.exists()) {
       return { ...(snap.data() as GameRoom), id: snap.id };
     }
-    return null;
   } catch (error) {
-    console.warn(`Could not fetch game room (${roomId}):`, error);
-    return null;
+    console.warn(`Could not fetch game room from Firestore (${roomId}), using fallback:`, error);
   }
+  return getFallbackRoom(roomId);
 }
 
 export function subscribeToGameRoom(
@@ -92,18 +98,35 @@ export function subscribeToGameRoom(
   if (!roomId || roomId.startsWith('room_bot_')) {
     return () => {};
   }
-  return onSnapshot(
-    doc(db, 'gameRooms', roomId),
-    (snap) => {
-      if (snap.exists()) {
-        onUpdate({ ...(snap.data() as GameRoom), id: snap.id });
+
+  // 1. Subscribe to fallback (in-memory + localStorage + WebRTC)
+  const unsubFallback = subscribeToFallbackRoom(roomId, onUpdate);
+
+  // 2. Subscribe to Firestore
+  let unsubFirestore = () => {};
+  try {
+    unsubFirestore = onSnapshot(
+      doc(db, 'gameRooms', roomId),
+      (snap) => {
+        if (snap.exists()) {
+          const room = { ...(snap.data() as GameRoom), id: snap.id };
+          saveFallbackRoom(room, false);
+          onUpdate(room);
+        }
+      },
+      (error) => {
+        if (onError) onError(error);
+        console.warn(`Game room snapshot notice (${roomId}):`, error);
       }
-    },
-    (error) => {
-      if (onError) onError(error);
-      console.warn(`Game room snapshot warning (${roomId}):`, error);
-    }
-  );
+    );
+  } catch (err) {
+    console.warn('Could not attach Firestore game room listener:', err);
+  }
+
+  return () => {
+    unsubFallback();
+    unsubFirestore();
+  };
 }
 
 export const QUESTION_DURATION_SECONDS = 50;
@@ -144,6 +167,7 @@ export async function syncMemoryMatchScore(
     }
   }
   updates.updatedAt = new Date().toISOString();
+  updateFallbackRoom(roomId, updates as Partial<GameRoom>);
   try {
     await updateDoc(doc(db, 'gameRooms', roomId), sanitizeUpdates(updates));
   } catch (error) {
@@ -216,8 +240,34 @@ export async function submitPlayerAnswer(
     }
   }
 
-  const updates: Record<string, unknown> = {};
+  // 1. Update Fallback Storage & Broadcast
+  const currentFallback = getFallbackRoom(roomId) || room;
+  const fallbackUpdates: Partial<GameRoom> = {};
+  if (isHost) {
+    fallbackUpdates.hostAnswer = answer ?? '';
+    fallbackUpdates.hostAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
+    if (pointsEarned > 0) {
+      fallbackUpdates.hostScore = (currentFallback.hostScore || 0) + pointsEarned;
+    }
+  } else {
+    fallbackUpdates.guestAnswer = answer ?? '';
+    fallbackUpdates.guestAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
+    if (pointsEarned > 0) {
+      fallbackUpdates.guestScore = (currentFallback.guestScore || 0) + pointsEarned;
+    }
+  }
+  updateFallbackRoom(roomId, fallbackUpdates);
+  broadcastFallbackMessage({
+    type: 'PLAYER_ANSWER',
+    roomId,
+    isHost,
+    answer: answer ?? '',
+    answerTime: typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs,
+    scoreDelta: pointsEarned,
+  });
 
+  // 2. Also persist to Firestore asynchronously
+  const updates: Record<string, unknown> = {};
   if (isHost) {
     updates.hostAnswer = answer ?? '';
     updates.hostAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
@@ -236,7 +286,7 @@ export async function submitPlayerAnswer(
   try {
     await updateDoc(doc(db, 'gameRooms', roomId), sanitizeUpdates(updates));
   } catch (error) {
-    console.warn(`Could not update player answer (${roomId}):`, error);
+    console.warn(`Could not update player answer in Firestore (${roomId}):`, error);
   }
 }
 
@@ -247,23 +297,64 @@ export async function advanceToNextRoundOrFinish(
   if (!roomId || roomId.startsWith('room_bot_')) {
     return;
   }
-  const roomDocRef = doc(db, 'gameRooms', roomId);
 
+  const currentFallback = getFallbackRoom(roomId) || room;
+  const nextRound = (currentFallback.currentRound || 1) + 1;
+  const totalRounds = currentFallback.totalRounds || currentFallback.questions?.length || 5;
+  const now = Date.now();
+
+  if (nextRound > totalRounds) {
+    let winnerId: string | 'tie' = 'tie';
+    if ((currentFallback.hostScore || 0) > (currentFallback.guestScore || 0)) {
+      winnerId = currentFallback.hostId || 'tie';
+    } else if ((currentFallback.guestScore || 0) > (currentFallback.hostScore || 0)) {
+      winnerId = currentFallback.guestId || 'tie';
+    }
+    updateFallbackRoom(roomId, {
+      status: 'finished',
+      winnerId,
+    });
+    broadcastFallbackMessage({
+      type: 'ADVANCE_ROUND',
+      roomId,
+      nextRound,
+      timestamp: now,
+    });
+  } else {
+    const nextQuestion = currentFallback.questions ? currentFallback.questions[nextRound - 1] : undefined;
+    updateFallbackRoom(roomId, {
+      currentRound: nextRound,
+      ...(nextQuestion ? { currentQuestion: nextQuestion } : {}),
+      status: 'playing',
+      hostAnswer: null,
+      hostAnswerTime: null,
+      guestAnswer: null,
+      guestAnswerTime: null,
+      roundStartedAt: now,
+      roundStartTime: now,
+    });
+    broadcastFallbackMessage({
+      type: 'ADVANCE_ROUND',
+      roomId,
+      nextRound,
+      nextQuestion,
+      timestamp: now,
+    });
+  }
+
+  // Also apply to Firestore asynchronously
+  const roomDocRef = doc(db, 'gameRooms', roomId);
   try {
-    // Check current state from server to prevent double-advancing or race conditions
     const snap = await getDoc(roomDocRef);
     if (!snap.exists()) return;
     const currentData = snap.data() as GameRoom;
 
-    // If another client already moved to the next round or finished, abort
     if (currentData.currentRound > room.currentRound || currentData.status === 'finished') {
       return;
     }
 
-    const nextRound = currentData.currentRound + 1;
-
-    if (nextRound > currentData.totalRounds) {
-      // Game completed! Determine winner from latest scores
+    const fsNextRound = currentData.currentRound + 1;
+    if (fsNextRound > currentData.totalRounds) {
       let winnerId: string | 'tie' = 'tie';
       if ((currentData.hostScore || 0) > (currentData.guestScore || 0)) {
         winnerId = currentData.hostId || 'tie';
@@ -280,11 +371,9 @@ export async function advanceToNextRoundOrFinish(
       return;
     }
 
-    // Move to next round
-    const nextQuestion = currentData.questions ? currentData.questions[nextRound - 1] : undefined;
-    const now = Date.now();
+    const nextQuestion = currentData.questions ? currentData.questions[fsNextRound - 1] : undefined;
     const updates = sanitizeUpdates({
-      currentRound: nextRound,
+      currentRound: fsNextRound,
       ...(nextQuestion ? { currentQuestion: nextQuestion } : {}),
       status: 'playing',
       hostAnswer: null,
@@ -298,12 +387,17 @@ export async function advanceToNextRoundOrFinish(
 
     await updateDoc(roomDocRef, updates);
   } catch (error) {
-    console.warn(`Could not advance round (${roomId}):`, error);
+    console.warn(`Could not advance round in Firestore (${roomId}):`, error);
   }
 }
 
 export async function syncRoomRoundStartTime(roomId: string, startTime: number) {
   if (!roomId || roomId.startsWith('room_bot_')) return;
+  updateFallbackRoom(roomId, {
+    status: 'playing',
+    roundStartTime: startTime,
+    roundStartedAt: startTime,
+  });
   try {
     await updateDoc(
       doc(db, 'gameRooms', roomId),
