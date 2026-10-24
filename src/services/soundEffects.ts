@@ -202,6 +202,30 @@ class SoundManager {
     }
   }
 
+  public playStart() {
+    if (!this.soundEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      [880, 1174.66, 1760].forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.05);
+        gain.gain.setValueAtTime(0.2, now + idx * 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.3);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now + idx * 0.05);
+        osc.stop(now + idx * 0.05 + 0.3);
+      });
+    } catch {
+      // ignore
+    }
+  }
+
   // Play synthetic melody for Mini-Game 4 (Music & Instruments)
   public playMelody(notes: number[], instrument: 'string' | 'wind' | 'percussion' | 'bell' = 'bell') {
     if (!this.soundEnabled) return;

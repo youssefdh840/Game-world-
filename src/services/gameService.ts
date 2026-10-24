@@ -337,24 +337,16 @@ export async function advanceToNextRoundOrFinish(
     });
   }
 
-  // Also apply to Firestore asynchronously
+  // Also apply to Firestore immediately
   const roomDocRef = doc(db, 'gameRooms', roomId);
   try {
-    const snap = await getDoc(roomDocRef);
-    if (!snap.exists()) return;
-    const currentData = snap.data() as GameRoom;
-
-    if (currentData.currentRound > room.currentRound || currentData.status === 'finished') {
-      return;
-    }
-
-    const fsNextRound = currentData.currentRound + 1;
-    if (fsNextRound > currentData.totalRounds) {
+    const fsNextRound = nextRound;
+    if (fsNextRound > totalRounds) {
       let winnerId: string | 'tie' = 'tie';
-      if ((currentData.hostScore || 0) > (currentData.guestScore || 0)) {
-        winnerId = currentData.hostId || 'tie';
-      } else if ((currentData.guestScore || 0) > (currentData.hostScore || 0)) {
-        winnerId = currentData.guestId || 'tie';
+      if ((currentFallback.hostScore || 0) > (currentFallback.guestScore || 0)) {
+        winnerId = currentFallback.hostId || 'tie';
+      } else if ((currentFallback.guestScore || 0) > (currentFallback.hostScore || 0)) {
+        winnerId = currentFallback.guestId || 'tie';
       }
 
       const updates = sanitizeUpdates({
@@ -363,24 +355,22 @@ export async function advanceToNextRoundOrFinish(
         updatedAt: new Date().toISOString(),
       });
       await updateDoc(roomDocRef, updates);
-      return;
+    } else {
+      const nextQuestion = currentFallback.questions ? currentFallback.questions[fsNextRound - 1] : undefined;
+      const updates = sanitizeUpdates({
+        currentRound: fsNextRound,
+        ...(nextQuestion ? { currentQuestion: nextQuestion } : {}),
+        status: 'playing',
+        hostAnswer: null,
+        hostAnswerTime: null,
+        guestAnswer: null,
+        guestAnswerTime: null,
+        roundStartedAt: now,
+        roundStartTime: now,
+        updatedAt: new Date().toISOString(),
+      });
+      await updateDoc(roomDocRef, updates);
     }
-
-    const nextQuestion = currentData.questions ? currentData.questions[fsNextRound - 1] : undefined;
-    const updates = sanitizeUpdates({
-      currentRound: fsNextRound,
-      ...(nextQuestion ? { currentQuestion: nextQuestion } : {}),
-      status: 'playing',
-      hostAnswer: null,
-      hostAnswerTime: null,
-      guestAnswer: null,
-      guestAnswerTime: null,
-      roundStartedAt: now,
-      roundStartTime: now,
-      updatedAt: new Date().toISOString(),
-    });
-
-    await updateDoc(roomDocRef, updates);
   } catch (error) {
     console.warn(`Could not advance round in Firestore (${roomId}):`, error);
   }

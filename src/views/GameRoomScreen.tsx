@@ -54,6 +54,7 @@ import {
   Flame,
   LogOut,
   Check,
+  Zap,
 } from 'lucide-react';
 
 import { getClientSessionId } from '../services/matchmakingService';
@@ -119,6 +120,15 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const [reportReason, setReportReason] = useState<string>('Unsportsmanlike conduct');
   const [reportedSuccess, setReportedSuccess] = useState<boolean>(false);
   const [forfeitModalOpen, setForfeitModalOpen] = useState<boolean>(false);
+
+  // Synchronized Round 1 Countdown Overlay state (locks Question 1 until shared start time)
+  const [startCountdownSec, setStartCountdownSec] = useState<number | null>(() => {
+    const target = initialRoom.roundStartTime || 0;
+    if (initialRoom.currentRound === 1 && target > Date.now()) {
+      return Math.max(1, Math.ceil((target - Date.now()) / 1000));
+    }
+    return null;
+  });
 
   // Word Scramble specific interactive state
   const [selectedTileIndices, setSelectedTileIndices] = useState<number[]>([]);
@@ -220,7 +230,22 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       : (room.hostId === activeUid || room.hostId === user.uid);
     setIsHost(currentIsHost);
     const unsubRoom = subscribeToGameRoom(room.id, (updated) => {
-      setRoom(updated);
+      setRoom((prev) => {
+        const merged = { ...updated };
+        // Prevent lagging snapshot from wiping out local player's newly submitted answer for the current round
+        if (prev.currentRound === updated.currentRound) {
+          if (isHostRef.current && prev.hostAnswer && !updated.hostAnswer) {
+            merged.hostAnswer = prev.hostAnswer;
+            merged.hostAnswerTime = prev.hostAnswerTime;
+            merged.hostScore = prev.hostScore;
+          } else if (!isHostRef.current && prev.guestAnswer && !updated.guestAnswer) {
+            merged.guestAnswer = prev.guestAnswer;
+            merged.guestAnswerTime = prev.guestAnswerTime;
+            merged.guestScore = prev.guestScore;
+          }
+        }
+        return merged;
+      });
       if (
         updated.roundStartTime &&
         updated.roundStartTime > 0 &&
@@ -252,6 +277,38 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
     };
   }, [room.id]);
+
+  // Synchronized Countdown Start: Locks Question 1 so both devices enter at the EXACT same millisecond
+  useEffect(() => {
+    const target = room.roundStartTime || 0;
+    if (room.currentRound !== 1 || !target || target <= Date.now()) {
+      setStartCountdownSec(null);
+      return;
+    }
+
+    let lastSec = -1;
+    const checkCountdown = () => {
+      const remainingMs = target - Date.now();
+      const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+      if (remainingSec > 0) {
+        setStartCountdownSec(remainingSec);
+        if (remainingSec !== lastSec) {
+          lastSec = remainingSec;
+          sounds.playCountdown();
+        }
+      } else {
+        setStartCountdownSec(0);
+        setTimeout(() => {
+          setStartCountdownSec(null);
+          sounds.playStart();
+        }, 350);
+      }
+    };
+
+    checkCountdown();
+    const cdInterval = setInterval(checkCountdown, 50);
+    return () => clearInterval(cdInterval);
+  }, [room.roundStartTime, room.currentRound]);
 
   // Fallback question hydration if room was initialized with empty questions
   useEffect(() => {
@@ -327,30 +384,31 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     }
   };
 
-  // Safe trigger for round advancement with answer explanation window
+  // Safe trigger for round advancement with answer explanation window (1-second animation)
   const triggerRoundAdvance = (_reason: string) => {
     if (isAdvancingRoundRef.current) return;
     isAdvancingRoundRef.current = true;
 
-    // Halt question countdown timer
+    // Immediately halt and zero out question countdown timer so no waiting downtime occurs
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    setTimeLeft(0);
 
-    // Reveal explanation and feedback
+    // Reveal explanation and feedback immediately
     setShowExplanation(true);
 
     if (roundTransitionTimeoutRef.current) {
       clearTimeout(roundTransitionTimeoutRef.current);
     }
 
-    // Transition after 2.5 seconds (gives players time to review answers)
+    // Advance both players after brief 1-second animation
     roundTransitionTimeoutRef.current = setTimeout(() => {
       executeAdvanceToNextRound();
-    }, 2500);
+    }, 1000);
 
-    // Multiplayer Guest fallback: if Host dropped or lagged, Guest advances after buffer
+    // Multiplayer Guest fallback: if Host dropped or lagged, Guest advances after brief buffer
     if (!isHostRef.current) {
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
       const currentRoundNum = roomRef.current.currentRound;
@@ -358,7 +416,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         if (roomRef.current.currentRound === currentRoundNum && roomRef.current.status !== 'finished') {
           advanceToNextRoundOrFinish(roomRef.current.id, roomRef.current);
         }
-      }, 4500);
+      }, 2200);
     }
   };
 
@@ -375,8 +433,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       return;
     }
 
-    // Do not start question timers until room status has actively transitioned to 'playing'
-    if (room.status !== 'playing') {
+    // Do not start question timers until room status has actively transitioned to 'playing' and 3-2-1 countdown has completed
+    if (room.status !== 'playing' || startCountdownSec !== null) {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -491,20 +549,21 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
     };
-  }, [room.currentRound, room.id, currentQ?.id, room.status, roundDurationSeconds, roundDurationMs]);
+  }, [room.currentRound, room.id, currentQ?.id, room.status, roundDurationSeconds, roundDurationMs, startCountdownSec]);
 
   // Monitor when both players have submitted answers (or in Guess the Number, when someone cracks the secret number first!)
   useEffect(() => {
     if (room.status === 'finished') return;
 
-    const hostDone = Boolean(room.hostAnswer);
-    const guestDone = Boolean(room.guestAnswer);
+    const myAnswerSubmitted = hasAnswered || Boolean(selectedAnswer);
+    const hostDone = isHostRef.current ? myAnswerSubmitted : Boolean(room.hostAnswer);
+    const guestDone = !isHostRef.current ? myAnswerSubmitted : Boolean(room.guestAnswer);
 
     if (isGuessNumber && currentQ) {
       const targetStr = String(
         typeof currentQ.targetNumber === 'number' ? currentQ.targetNumber : currentQ.correctAnswer
       );
-      if (room.hostAnswer === targetStr || room.guestAnswer === targetStr) {
+      if (room.hostAnswer === targetStr || room.guestAnswer === targetStr || selectedAnswer === targetStr) {
         triggerRoundAdvance('number_cracked_first');
         return;
       }
@@ -513,11 +572,20 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     if (hostDone && guestDone) {
       triggerRoundAdvance('both_answered');
     }
-  }, [room.hostAnswer, room.guestAnswer, room.status, room.currentRound, isGuessNumber, currentQ?.id]);
+  }, [
+    room.hostAnswer,
+    room.guestAnswer,
+    room.status,
+    room.currentRound,
+    hasAnswered,
+    selectedAnswer,
+    isGuessNumber,
+    currentQ?.id,
+  ]);
 
   const handleNumberGuessSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (hasAnswered || showExplanation || isAdvancingRoundRef.current || !currentQ) return;
+    if (hasAnswered || showExplanation || isAdvancingRoundRef.current || !currentQ || startCountdownSec !== null) return;
 
     const isHostPlayer = isHostRef.current;
     const activeUid = auth.currentUser?.uid || user.uid;
@@ -637,7 +705,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       hasAnswered ||
       showExplanation ||
       isAdvancingRoundRef.current ||
-      isCheckingPair
+      isCheckingPair ||
+      startCountdownSec !== null
     ) {
       return;
     }
@@ -835,7 +904,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
   // Word Scramble: Verify assembled sequence, allow clear & retry on wrong guess
   const verifyWordScrambleSequence = (indices: number[]) => {
-    if (hasAnswered || showExplanation || isAdvancingRoundRef.current || !currentQ) return;
+    if (hasAnswered || showExplanation || isAdvancingRoundRef.current || !currentQ || startCountdownSec !== null) return;
     const letters = currentQ.options;
     const targetWord = currentQ.correctAnswer.toUpperCase().replace(/[^A-Z]/g, '');
     const candidate = indices.map((i) => letters[i]).join('').toUpperCase();
@@ -955,7 +1024,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   }, [isWordScramble, room.status, hasAnswered, showExplanation, currentQ, selectedTileIndices]);
 
   const handleAnswerSelect = (option: string) => {
-    if (hasAnswered || showExplanation || isAdvancingRoundRef.current) return;
+    if (hasAnswered || showExplanation || isAdvancingRoundRef.current || startCountdownSec !== null) return;
     setHasAnswered(true);
     setSelectedAnswer(option);
 
@@ -1357,6 +1426,69 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-teal-500/[0.03] rounded-full blur-[100px]" />
       </div>
 
+      {/* Synchronized 3-2-1 Match Start Countdown Overlay */}
+      {startCountdownSec !== null && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 sm:p-6 bg-[#0B0F19]/95 backdrop-blur-md animate-fade-in select-none">
+          <div className="w-full max-w-sm sm:max-w-md bg-[#0E1526] border border-cyan-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl text-center space-y-6 relative overflow-hidden">
+            <div className="absolute -top-20 -left-20 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-20 -right-20 w-48 h-48 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
+
+            <div>
+              <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 px-3 py-1 rounded-full inline-block mb-2">
+                MATCH READY • SYNCHRONIZING
+              </span>
+              <h3 className="text-xl sm:text-2xl font-black text-white">Duel Starting Together</h3>
+              <p className="text-xs text-slate-400 mt-1">Both devices are locked to Question 1 in real time</p>
+            </div>
+
+            {/* VS Avatars Card */}
+            <div className="flex items-center justify-around gap-3 py-2">
+              <div className="flex flex-col items-center">
+                <div className="relative">
+                  <img
+                    src={user.avatar}
+                    alt={user.username}
+                    className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover ring-2 ring-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)] bg-slate-900"
+                  />
+                  <span className="absolute -bottom-1 -right-1 text-sm">{user.countryFlag}</span>
+                </div>
+                <span className="text-xs font-bold text-white mt-2 max-w-[85px] truncate">{user.username}</span>
+                <span className="text-[10px] text-cyan-400 font-bold uppercase mt-0.5">READY</span>
+              </div>
+
+              <div className="flex flex-col items-center justify-center">
+                <span className="text-base sm:text-lg font-black text-slate-500 italic">VS</span>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <div className="relative">
+                  <img
+                    src={opponentAvatar}
+                    alt={opponentName}
+                    className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover ring-2 ring-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)] bg-slate-900"
+                  />
+                  <span className="absolute -bottom-1 -right-1 text-sm">{opponentFlag}</span>
+                </div>
+                <span className="text-xs font-bold text-white mt-2 max-w-[85px] truncate">{opponentName}</span>
+                <span className="text-[10px] text-rose-400 font-bold uppercase mt-0.5">READY</span>
+              </div>
+            </div>
+
+            {/* Synchronized 3-2-1 Countdown Circle */}
+            <div className="flex flex-col items-center justify-center py-2">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-[#0B0F19] border-4 border-cyan-400 flex items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.5)] animate-pulse">
+                <span className="text-4xl sm:text-5xl font-mono font-black text-cyan-300">
+                  {startCountdownSec > 0 ? startCountdownSec : 'GO!'}
+                </span>
+              </div>
+              <span className="text-xs text-slate-400 font-medium mt-3">
+                {startCountdownSec > 0 ? `Starting in ${startCountdownSec}...` : 'Get ready!'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Header: VS Scoreboard */}
       <div className="bg-[#0E1526]/95 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-6 md:px-8 pt-safe pb-3 sm:py-4 sticky top-0 z-30 shadow-md">
         <div className="w-full max-w-md sm:max-w-xl md:max-w-2xl mx-auto">
@@ -1454,6 +1586,14 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       <div className="relative z-10 flex-1 w-full max-w-md sm:max-w-xl md:max-w-2xl mx-auto px-4 sm:px-6 md:px-8 py-6 sm:py-8 flex flex-col justify-center">
         {currentQ ? (
           <div className="space-y-5 sm:space-y-6">
+            {/* Immediate Transition Banner when Both Players Answered */}
+            {hasAnswered && opponentHasAnswered && !showExplanation && (
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-cyan-500/20 via-teal-500/20 to-emerald-500/20 border border-cyan-400/40 text-cyan-200 text-xs sm:text-sm font-black flex items-center justify-center gap-2 animate-pulse shadow-lg shadow-cyan-500/10">
+                <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 shrink-0 animate-bounce" />
+                <span>BOTH ANSWERED! Advancing to next round in 1s...</span>
+              </div>
+            )}
+
             {/* Category Pill & Country Origin */}
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full">
@@ -1668,7 +1808,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                         <button
                           key={card.id}
                           type="button"
-                          disabled={hasAnswered || showExplanation || isCheckingPair}
+                          disabled={hasAnswered || showExplanation || isCheckingPair || startCountdownSec !== null}
                           onClick={() => handleMemoryCardClick(idx)}
                           className="bg-[#0B0F19] hover:bg-[#121B30] active:scale-95 border-2 border-cyan-500/30 hover:border-cyan-400/80 rounded-2xl sm:rounded-3xl p-2 sm:p-3 flex flex-col items-center justify-center text-center shadow-md transition-all cursor-pointer aspect-square sm:aspect-[4/5] select-none group"
                         >
@@ -1783,17 +1923,19 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                                 min={1}
                                 max={100}
                                 inputMode="numeric"
+                                disabled={startCountdownSec !== null}
                                 placeholder={`Enter number (${Math.min(lowBound, highBound)}-${Math.max(lowBound, highBound)})...`}
                                 value={numberInput}
                                 onChange={(e) => {
                                   setNumberError(null);
                                   setNumberInput(e.target.value);
                                 }}
-                                className="flex-1 bg-slate-950 border-2 border-slate-700 focus:border-amber-400 rounded-2xl px-4 py-3.5 text-center font-mono font-black text-xl sm:text-2xl text-white focus:outline-none transition-colors"
+                                className="flex-1 bg-slate-950 border-2 border-slate-700 focus:border-amber-400 rounded-2xl px-4 py-3.5 text-center font-mono font-black text-xl sm:text-2xl text-white focus:outline-none transition-colors disabled:opacity-50"
                               />
                               <button
                                 type="submit"
-                                className="px-6 py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold text-sm sm:text-base shadow-lg active:scale-95 transition-all cursor-pointer shrink-0"
+                                disabled={startCountdownSec !== null}
+                                className="px-6 py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold text-sm sm:text-base shadow-lg active:scale-95 transition-all cursor-pointer shrink-0 disabled:opacity-50"
                               >
                                 Guess
                               </button>
@@ -1988,7 +2130,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                         <button
                           key={`${idx}_${letter}`}
                           type="button"
-                          disabled={isUsed || hasAnswered || showExplanation}
+                          disabled={isUsed || hasAnswered || showExplanation || startCountdownSec !== null}
                           onClick={() => handleScrambleTileClick(idx)}
                           className={`w-11 h-12 sm:w-13 sm:h-14 rounded-2xl border-2 font-mono font-black text-lg sm:text-xl flex items-center justify-center transition-all ${
                             isUsed
@@ -2026,7 +2168,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                   return (
                     <button
                       key={option}
-                      disabled={hasAnswered}
+                      disabled={hasAnswered || startCountdownSec !== null}
                       onClick={() => handleAnswerSelect(option)}
                       className={`w-full p-4 sm:p-4.5 rounded-2xl border text-sm sm:text-base font-bold text-left transition-all active:scale-98 flex items-center justify-between gap-2 cursor-pointer ${btnStyle}`}
                     >
