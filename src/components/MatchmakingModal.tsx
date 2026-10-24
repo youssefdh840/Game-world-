@@ -8,6 +8,7 @@ import {
   joinPrivateDuelRoom,
   listenToPrivateRoomHost,
   getClientSessionId,
+  ensureFirebaseAuth,
 } from '../services/matchmakingService';
 import { subscribeToFallbackHandshake } from '../services/multiplayerFallback';
 import { syncRoomRoundStartTime } from '../services/gameService';
@@ -183,9 +184,11 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     cdIntervalRef.current = setInterval(tick, 50);
   };
 
-  // Reset modal state when opened/closed
+  // Reset modal state when opened/closed & bootstrap auth immediately
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      ensureFirebaseAuth().catch(() => {});
+    } else {
       hasCommencedRef.current = false;
       setMatchedOpponent(null);
       setCountdown(null);

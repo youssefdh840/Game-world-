@@ -86,6 +86,8 @@ export function getClientSessionId(): string {
   }
 }
 
+let authInitPromise: Promise<string> | null = null;
+
 /**
  * Automatically ensures Firebase Auth has a valid session (falling back to signInAnonymously for guest players).
  */
@@ -94,14 +96,33 @@ export async function ensureFirebaseAuth(): Promise<string> {
   if (current) {
     return current.uid;
   }
-  try {
-    const cred = await withTimeout(signInAnonymously(auth), 1800);
-    return cred.user.uid;
-  } catch (err) {
-    console.warn('Anonymous auth auto-fallback notice:', err);
-    const fallbackUser = auth.currentUser as { uid: string } | null;
-    return fallbackUser?.uid || `guest_${getClientSessionId()}`;
+  if (authInitPromise) {
+    return authInitPromise;
   }
+  authInitPromise = (async () => {
+    try {
+      const cred = await withTimeout(signInAnonymously(auth), 5000);
+      return cred.user.uid;
+    } catch (err) {
+      console.warn('Anonymous auth first attempt notice:', err);
+      try {
+        const cred2 = await signInAnonymously(auth);
+        return cred2.user.uid;
+      } catch (err2) {
+        console.warn('Anonymous auth second attempt notice:', err2);
+      }
+      const fallbackUser = auth.currentUser as { uid: string } | null;
+      return fallbackUser?.uid || `guest_${getClientSessionId()}`;
+    } finally {
+      authInitPromise = null;
+    }
+  })();
+  return authInitPromise;
+}
+
+// Proactively initiate anonymous authentication in background
+if (typeof window !== 'undefined') {
+  ensureFirebaseAuth().catch(() => {});
 }
 
 /**
@@ -234,9 +255,8 @@ export async function joinMatchmakingQueue(
           updatedAt: new Date().toISOString(),
         });
 
-        // Non-blocking background Firestore updates
-        withTimeout(updateDoc(doc(db, 'gameRooms', waitingRoom.id), updates as Record<string, unknown>), 1800).catch(() => {});
-        updateDoc(doc(db, 'rooms', waitingRoom.id), updates as Record<string, unknown>).catch(() => {});
+        // Non-blocking background Firestore updates to gameRooms
+        withTimeout(updateDoc(doc(db, 'gameRooms', waitingRoom.id), updates as Record<string, unknown>), 2000).catch(() => {});
 
         const matchedRoom: GameRoom = { ...waitingRoom, ...updates };
         saveFallbackRoom(matchedRoom, true);
@@ -302,8 +322,7 @@ export async function joinMatchmakingQueue(
     const roomId = fallbackResult.roomId;
     const waitingRoom = getFallbackRoom(roomId);
     if (waitingRoom) {
-      withTimeout(setDoc(doc(db, 'gameRooms', roomId), waitingRoom), 1800).catch(() => {});
-      setDoc(doc(db, 'rooms', roomId), waitingRoom).catch(() => {});
+      withTimeout(setDoc(doc(db, 'gameRooms', roomId), waitingRoom), 2000).catch(() => {});
     }
     return {
       roomId,
@@ -311,7 +330,6 @@ export async function joinMatchmakingQueue(
       unsubscribe: () => {
         leaveFallbackQueueService(roomId);
         deleteDoc(doc(db, 'gameRooms', roomId)).catch(() => {});
-        deleteDoc(doc(db, 'rooms', roomId)).catch(() => {});
       },
     };
   } catch (err) {
@@ -366,7 +384,7 @@ export async function joinMatchmakingQueue(
 
   saveFallbackRoom(roomData, true);
 
-  withTimeout(setDoc(doc(db, 'gameRooms', roomId), roomData), 1800).catch((error) => {
+  withTimeout(setDoc(doc(db, 'gameRooms', roomId), roomData), 2500).catch((error) => {
     console.warn('Could not create waiting game room in Firestore (fallback active):', error);
   });
 
@@ -376,7 +394,6 @@ export async function joinMatchmakingQueue(
     unsubscribe: () => {
       leaveFallbackQueueService(roomId);
       deleteDoc(doc(db, 'gameRooms', roomId)).catch(() => {});
-      deleteDoc(doc(db, 'rooms', roomId)).catch(() => {});
     },
   };
 }
@@ -592,7 +609,6 @@ export async function leaveMatchmakingQueue(roomId: string) {
         const data = roomSnap.data() as GameRoom;
         if (data.status === 'waiting' && (!data.guestId || data.guestId === '')) {
           deleteDoc(doc(db, 'gameRooms', roomId)).catch(() => {});
-          deleteDoc(doc(db, 'rooms', roomId)).catch(() => {});
         }
       }
     }).catch(() => {});
@@ -672,15 +688,26 @@ export async function createPrivateDuelRoom(
   // 1. Immediately persist to fallback storage (instant local & peer broker)
   saveFallbackRoom(roomData, true);
 
-  // 2. Persist to Firestore: Await the write across both gameRooms and rooms collections with generous timeout
-  try {
-    await Promise.all([
-      withTimeout(setDoc(doc(db, 'gameRooms', roomId), roomData), 4500),
-      withTimeout(setDoc(doc(db, 'rooms', roomCode), roomData), 4500).catch(() => {}),
-      withTimeout(setDoc(doc(db, 'rooms', roomId), roomData), 4500).catch(() => {}),
-    ]);
-  } catch (primaryErr) {
-    console.warn('Firestore room initial write notice (peer & storage active):', primaryErr);
+  // 2. Persist to Firestore: Await the write to gameRooms with retry
+  let writeSuccess = false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      if (!auth.currentUser) {
+        await ensureFirebaseAuth().catch(() => {});
+      }
+      await withTimeout(setDoc(doc(db, 'gameRooms', roomId), roomData), 4500);
+      writeSuccess = true;
+      break;
+    } catch (err) {
+      console.warn(`Firestore room creation attempt ${attempt + 1} notice:`, err);
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+  }
+
+  if (!writeSuccess) {
+    console.warn('Firestore room initial write notice: room saved to peer & fallback storage.');
   }
 
   return { room: roomData, roomCode };
@@ -706,35 +733,34 @@ export async function joinPrivateDuelRoom(
   // 1. First check local storage & in-memory fallback (instant if same machine or tab)
   const localRoom = getFallbackRoom(cleanCode);
   if (localRoom && localRoom.status !== 'finished') {
-    currentRoom = localRoom;
+    // Only use local room if it was already synced or belongs to another tab on same browser
+    const isSameHostTab = localRoom.hostSessionId ? localRoom.hostSessionId === mySessionId : false;
+    if (!isSameHostTab) {
+      currentRoom = localRoom;
+    }
   }
 
   // 2. Query Firestore with retry loop AND WebRTC Peer concurrently
   if (!currentRoom) {
-    const peerPromise = withTimeout(joinGuestPeer(cleanCode, player), 3800, null).catch(() => null);
+    const peerPromise = withTimeout(joinGuestPeer(cleanCode, player), 4000, null).catch(() => null);
 
     const fetchFirestoreWithRetry = async (): Promise<GameRoom | null> => {
-      for (let attempt = 0; attempt < 4; attempt++) {
+      if (!auth.currentUser) {
+        await ensureFirebaseAuth().catch(() => {});
+      }
+
+      for (let attempt = 0; attempt < 5; attempt++) {
         try {
-          // Check gameRooms/room_code_CODE
-          const snap1 = await withTimeout(getDoc(doc(db, 'gameRooms', roomId)), 2200, null);
+          // Check gameRooms/room_code_CODE directly
+          const snap1 = await withTimeout(getDoc(doc(db, 'gameRooms', roomId)), 2500, null);
           if (snap1 && snap1.exists()) {
             return { ...(snap1.data() as GameRoom), id: snap1.id };
           }
-          // Check rooms/CODE
-          const snap2 = await withTimeout(getDoc(doc(db, 'rooms', cleanCode)), 2000, null);
-          if (snap2 && snap2.exists()) {
-            return { ...(snap2.data() as GameRoom), id: snap2.id };
-          }
-          // Check rooms/room_code_CODE
-          const snap3 = await withTimeout(getDoc(doc(db, 'rooms', roomId)), 2000, null);
-          if (snap3 && snap3.exists()) {
-            return { ...(snap3.data() as GameRoom), id: snap3.id };
-          }
+
           // Query gameRooms by roomCode property
           const qSnap = await withTimeout(
             getDocs(query(collection(db, 'gameRooms'), where('roomCode', '==', cleanCode))),
-            2200,
+            2500,
             null
           );
           if (qSnap && !qSnap.empty) {
@@ -746,8 +772,8 @@ export async function joinPrivateDuelRoom(
         }
 
         // Wait before next attempt
-        if (attempt < 3) {
-          await new Promise((res) => setTimeout(res, 600));
+        if (attempt < 4) {
+          await new Promise((res) => setTimeout(res, 500));
         }
       }
       return null;
@@ -832,11 +858,13 @@ export async function joinPrivateDuelRoom(
 
   // Await Firestore write so Host's listener immediately catches it
   try {
-    await Promise.all([
-      withTimeout(updateDoc(doc(db, 'gameRooms', roomId), updates as Record<string, unknown>), 4000),
-      withTimeout(updateDoc(doc(db, 'rooms', cleanCode), updates as Record<string, unknown>), 4000).catch(() => {}),
-      withTimeout(updateDoc(doc(db, 'rooms', roomId), updates as Record<string, unknown>), 4000).catch(() => {}),
-    ]);
+    if (!auth.currentUser) {
+      await ensureFirebaseAuth().catch(() => {});
+    }
+    await withTimeout(
+      updateDoc(doc(db, 'gameRooms', currentRoom.id || roomId), updates as Record<string, unknown>),
+      4500
+    );
   } catch (upErr) {
     console.warn('Firestore guest join write notice:', upErr);
   }
@@ -915,9 +943,8 @@ export function listenToPrivateRoomHost(
     });
   }
 
-  // 3. Listen to Firestore
+  // 3. Listen to Firestore gameRooms collection
   let unsubGameRooms: (() => void) | null = null;
-  let unsubRooms: (() => void) | null = null;
   try {
     unsubGameRooms = onSnapshot(
       doc(db, 'gameRooms', roomId),
@@ -930,18 +957,6 @@ export function listenToPrivateRoomHost(
         console.warn('GameRooms listener notice (using peer & storage fallback):', err);
       }
     );
-
-    unsubRooms = onSnapshot(
-      doc(db, 'rooms', roomId),
-      (snap) => {
-        if (snap.exists()) {
-          handleUpdate({ ...(snap.data() as GameRoom), id: snap.id });
-        }
-      },
-      (err) => {
-        console.warn('Rooms listener notice:', err);
-      }
-    );
   } catch (err) {
     console.warn('Firestore listener attachment notice:', err);
   }
@@ -951,6 +966,5 @@ export function listenToPrivateRoomHost(
     unsubFallback();
     if (unsubPeer) unsubPeer();
     if (unsubGameRooms) unsubGameRooms();
-    if (unsubRooms) unsubRooms();
   };
 }
