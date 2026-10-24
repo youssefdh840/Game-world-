@@ -216,7 +216,7 @@ export async function testConnection(): Promise<boolean> {
           await new Promise((r) => setTimeout(r, 1200));
           continue;
         }
-        console.error('Please check your Firebase configuration.');
+        console.warn('Firebase connection notice: client is offline or running with local storage fallback.');
         return false;
       }
       return true;

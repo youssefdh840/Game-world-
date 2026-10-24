@@ -619,6 +619,7 @@ export async function createPrivateDuelRoom(
   preferredCategory: GameCategory | 'mixed' = 'mixed',
   targetCountryCode?: string
 ): Promise<{ room: GameRoom; roomCode: string }> {
+  await ensureFirebaseAuth().catch(() => {});
   const player = ensurePlayerIdentity(user);
   const mySessionId = getClientSessionId();
   const roomCode = generateRoomCode();
@@ -671,18 +672,16 @@ export async function createPrivateDuelRoom(
   // 1. Immediately persist to fallback storage (instant local & peer broker)
   saveFallbackRoom(roomData, true);
 
-  // 2. Persist to Firestore asynchronously in background with timeout (never blocks UI!)
-  const writeRoomData = async () => {
-    try {
-      await withTimeout(setDoc(doc(db, 'gameRooms', roomId), roomData), 1800);
-      setDoc(doc(db, 'rooms', roomId), roomData).catch(() => {});
-      setDoc(doc(db, 'rooms', roomCode), roomData).catch(() => {});
-      setDoc(doc(db, 'duels', roomId), roomData).catch(() => {});
-    } catch (primaryErr) {
-      console.warn('Firestore room write notice (fallback active):', primaryErr);
-    }
-  };
-  writeRoomData().catch(() => {});
+  // 2. Persist to Firestore: Await the write across both gameRooms and rooms collections with generous timeout
+  try {
+    await Promise.all([
+      withTimeout(setDoc(doc(db, 'gameRooms', roomId), roomData), 4500),
+      withTimeout(setDoc(doc(db, 'rooms', roomCode), roomData), 4500).catch(() => {}),
+      withTimeout(setDoc(doc(db, 'rooms', roomId), roomData), 4500).catch(() => {}),
+    ]);
+  } catch (primaryErr) {
+    console.warn('Firestore room initial write notice (peer & storage active):', primaryErr);
+  }
 
   return { room: roomData, roomCode };
 }
@@ -696,6 +695,7 @@ export async function joinPrivateDuelRoom(
     throw new Error('Please enter a valid 6-character room code.');
   }
 
+  await ensureFirebaseAuth().catch(() => {});
   const player = ensurePlayerIdentity(user);
   const mySessionId = getClientSessionId();
   const roomId = `room_code_${cleanCode}`;
@@ -703,41 +703,64 @@ export async function joinPrivateDuelRoom(
   let currentRoom: GameRoom | null = null;
   let peerStartTime: number | undefined;
 
-  // 1. First check local storage & in-memory fallback (instant!)
+  // 1. First check local storage & in-memory fallback (instant if same machine or tab)
   const localRoom = getFallbackRoom(cleanCode);
-  if (localRoom) {
+  if (localRoom && localRoom.status !== 'finished') {
     currentRoom = localRoom;
   }
 
-  // 2. Query Firestore AND WebRTC Peer in parallel with strict timeouts
+  // 2. Query Firestore with retry loop AND WebRTC Peer concurrently
   if (!currentRoom) {
-    const fetchFirestore = async (): Promise<GameRoom | null> => {
-      try {
-        const snap = await withTimeout(getDoc(doc(db, 'gameRooms', roomId)), 1800);
-        if (snap && snap.exists()) return { ...(snap.data() as GameRoom), id: snap.id };
-        const snap2 = await withTimeout(getDoc(doc(db, 'rooms', cleanCode)), 1500);
-        if (snap2 && snap2.exists()) return { ...(snap2.data() as GameRoom), id: snap2.id };
-      } catch (getErr) {
-        console.warn('Firestore room lookup notice, checking peer fallback:', getErr);
+    const peerPromise = withTimeout(joinGuestPeer(cleanCode, player), 3800, null).catch(() => null);
+
+    const fetchFirestoreWithRetry = async (): Promise<GameRoom | null> => {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          // Check gameRooms/room_code_CODE
+          const snap1 = await withTimeout(getDoc(doc(db, 'gameRooms', roomId)), 2200, null);
+          if (snap1 && snap1.exists()) {
+            return { ...(snap1.data() as GameRoom), id: snap1.id };
+          }
+          // Check rooms/CODE
+          const snap2 = await withTimeout(getDoc(doc(db, 'rooms', cleanCode)), 2000, null);
+          if (snap2 && snap2.exists()) {
+            return { ...(snap2.data() as GameRoom), id: snap2.id };
+          }
+          // Check rooms/room_code_CODE
+          const snap3 = await withTimeout(getDoc(doc(db, 'rooms', roomId)), 2000, null);
+          if (snap3 && snap3.exists()) {
+            return { ...(snap3.data() as GameRoom), id: snap3.id };
+          }
+          // Query gameRooms by roomCode property
+          const qSnap = await withTimeout(
+            getDocs(query(collection(db, 'gameRooms'), where('roomCode', '==', cleanCode))),
+            2200,
+            null
+          );
+          if (qSnap && !qSnap.empty) {
+            const doc0 = qSnap.docs[0];
+            return { ...(doc0.data() as GameRoom), id: doc0.id };
+          }
+        } catch (err) {
+          console.warn(`Firestore lookup retry attempt ${attempt + 1} notice:`, err);
+        }
+
+        // Wait before next attempt
+        if (attempt < 3) {
+          await new Promise((res) => setTimeout(res, 600));
+        }
       }
       return null;
     };
 
-    const fetchPeer = async (): Promise<{ room: GameRoom; startTime: number } | null> => {
-      try {
-        return await withTimeout(joinGuestPeer(cleanCode, player), 2200);
-      } catch (peerErr) {
-        console.warn('WebRTC peer join notice:', peerErr);
-        return null;
-      }
-    };
-
-    const [fsRes, peerRes] = await Promise.all([fetchFirestore(), fetchPeer()]);
-    if (peerRes) {
+    const [fsRes, peerRes] = await Promise.all([fetchFirestoreWithRetry(), peerPromise]);
+    if (peerRes?.room) {
       currentRoom = peerRes.room;
       peerStartTime = peerRes.startTime;
+    } else if (fsRes) {
+      currentRoom = fsRes;
     } else {
-      currentRoom = fsRes || getFallbackRoom(cleanCode);
+      currentRoom = getFallbackRoom(cleanCode);
     }
   }
 
@@ -751,12 +774,12 @@ export async function joinPrivateDuelRoom(
 
   const isSameHostTab = currentRoom.hostSessionId
     ? currentRoom.hostSessionId === mySessionId
-    : currentRoom.hostId === player.uid;
+    : (player.uid && currentRoom.hostId === player.uid && !currentRoom.guestId);
   if (isSameHostTab) {
-    throw new Error('You generated this code in this tab. Share this code with a friend or open another window to test joining!');
+    throw new Error('You generated this code on this device. Share this code with a friend or open another window to test joining!');
   }
 
-  if (currentRoom.guestId && currentRoom.guestId !== '' && currentRoom.guestSessionId !== mySessionId) {
+  if (currentRoom.guestId && currentRoom.guestId !== '' && currentRoom.guestId !== player.uid && currentRoom.guestSessionId !== mySessionId) {
     throw new Error('This room is already full (another player joined).');
   }
 
@@ -807,18 +830,16 @@ export async function joinPrivateDuelRoom(
     hostSessionId: currentRoom.hostSessionId || '',
   });
 
-  // Background update to Firestore with timeout
-  const applyRoomUpdates = async () => {
-    try {
-      await withTimeout(updateDoc(doc(db, 'gameRooms', roomId), updates as Record<string, unknown>), 1800);
-      updateDoc(doc(db, 'rooms', roomId), updates as Record<string, unknown>).catch(() => {});
-      updateDoc(doc(db, 'rooms', cleanCode), updates as Record<string, unknown>).catch(() => {});
-      updateDoc(doc(db, 'duels', roomId), updates as Record<string, unknown>).catch(() => {});
-    } catch {
-      // non-fatal
-    }
-  };
-  applyRoomUpdates().catch(() => {});
+  // Await Firestore write so Host's listener immediately catches it
+  try {
+    await Promise.all([
+      withTimeout(updateDoc(doc(db, 'gameRooms', roomId), updates as Record<string, unknown>), 4000),
+      withTimeout(updateDoc(doc(db, 'rooms', cleanCode), updates as Record<string, unknown>), 4000).catch(() => {}),
+      withTimeout(updateDoc(doc(db, 'rooms', roomId), updates as Record<string, unknown>), 4000).catch(() => {}),
+    ]);
+  } catch (upErr) {
+    console.warn('Firestore guest join write notice:', upErr);
+  }
 
   return { room: updatedRoom, startTime };
 }
@@ -872,7 +893,7 @@ export function listenToPrivateRoomHost(
             updatedAt: new Date().toISOString(),
           }) as Record<string, unknown>
         ),
-        1800
+        3500
       ).catch(() => {});
 
       onGuestJoined(readyRoom, startTime);

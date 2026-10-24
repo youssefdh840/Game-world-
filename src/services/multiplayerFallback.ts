@@ -26,7 +26,7 @@ export type FallbackMessage =
   | { type: 'MATCH_ACK'; roomId: string; guestSessionId: string; timestamp: number }
   | { type: 'GAME_START'; roomId: string; room: GameRoom; startTime: number }
   | { type: 'GAME_START_CONFIRMED'; roomId: string; guestSessionId: string; timestamp: number }
-  | { type: 'PLAYER_ANSWER'; roomId: string; isHost: boolean; answer: string; answerTime: number; scoreDelta: number }
+  | { type: 'PLAYER_ANSWER'; roomId: string; isHost: boolean; answer: string; answerTime: number; scoreDelta: number; playerId?: string; score?: number; questionIndex?: number }
   | { type: 'ADVANCE_ROUND'; roomId: string; nextRound: number; nextQuestion?: Question; timestamp: number }
   | { type: 'CHAT_MSG'; roomId: string; message: ChatMessage }
   | { type: 'QUEUE_ANNOUNCE'; room: GameRoom; sessionId: string };
@@ -174,11 +174,19 @@ function handleIncomingMessage(msg: FallbackMessage) {
       if (msg.isHost) {
         updated.hostAnswer = msg.answer;
         updated.hostAnswerTime = msg.answerTime;
-        if (msg.scoreDelta > 0) updated.hostScore = (updated.hostScore || 0) + msg.scoreDelta;
+        if (typeof msg.score === 'number') {
+          updated.hostScore = msg.score;
+        } else if (msg.scoreDelta > 0) {
+          updated.hostScore = (updated.hostScore || 0) + msg.scoreDelta;
+        }
       } else {
         updated.guestAnswer = msg.answer;
         updated.guestAnswerTime = msg.answerTime;
-        if (msg.scoreDelta > 0) updated.guestScore = (updated.guestScore || 0) + msg.scoreDelta;
+        if (typeof msg.score === 'number') {
+          updated.guestScore = msg.score;
+        } else if (msg.scoreDelta > 0) {
+          updated.guestScore = (updated.guestScore || 0) + msg.scoreDelta;
+        }
       }
       saveFallbackRoom(updated, false);
       notifyRoomListeners(updated);

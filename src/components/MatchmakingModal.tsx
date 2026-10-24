@@ -9,6 +9,7 @@ import {
   listenToPrivateRoomHost,
   getClientSessionId,
 } from '../services/matchmakingService';
+import { subscribeToFallbackHandshake } from '../services/multiplayerFallback';
 import { syncRoomRoundStartTime } from '../services/gameService';
 import { getCountryByCode } from '../services/countryData';
 import { getSyncDetectedCountry } from '../services/geolocationService';
@@ -126,17 +127,25 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     setStatusText(`Real challenger found: ${opponent.username || 'Opponent'}!`);
     sounds.playCorrect();
 
-    const startTime =
+    let activeStartTime =
       syncedStartTime ||
       (room.roundStartTime && room.roundStartTime > Date.now() ? room.roundStartTime : Date.now() + 3200);
 
-    room.roundStartTime = startTime;
-    room.roundStartedAt = startTime;
+    room.roundStartTime = activeStartTime;
+    room.roundStartedAt = activeStartTime;
+
+    const unsubHandshake = subscribeToFallbackHandshake(room.id, (msg) => {
+      if ((msg.type === 'MATCH_READY' || msg.type === 'GAME_START') && 'startTime' in msg && msg.startTime && msg.startTime > Date.now()) {
+        activeStartTime = msg.startTime;
+        room.roundStartTime = msg.startTime;
+        room.roundStartedAt = msg.startTime;
+      }
+    });
 
     let lastSec = -1;
 
     const tick = () => {
-      const remainingMs = startTime - Date.now();
+      const remainingMs = activeStartTime - Date.now();
       const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
 
       if (remainingSec > 0) {
@@ -146,6 +155,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
           sounds.playCountdown();
         }
       } else {
+        unsubHandshake();
         if (cdIntervalRef.current) {
           clearInterval(cdIntervalRef.current);
           cdIntervalRef.current = null;
@@ -162,7 +172,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
           ? room.guestSessionId !== mySessionId
           : (room.hostId === currentUid || room.hostId === user.uid);
         if (isHost) {
-          syncRoomRoundStartTime(room.id, startTime);
+          syncRoomRoundStartTime(room.id, activeStartTime);
         }
 
         onMatchFound(room);

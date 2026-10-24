@@ -236,8 +236,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       setMessages(msgs);
     });
 
-    // Ensure room status transitions to 'playing' if starting or waiting
-    if (room.status === 'starting' || room.status === 'waiting') {
+    // If room is starting with a synchronized start time, switch to playing when startTime is reached
+    if (room.status === 'starting' && room.roundStartTime && room.roundStartTime <= Date.now()) {
       setRoom((prev) => ({ ...prev, status: 'playing' }));
     }
 
@@ -372,6 +372,15 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
       if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
       handleMatchFinished();
+      return;
+    }
+
+    // Do not start question timers until room status has actively transitioned to 'playing'
+    if (room.status !== 'playing') {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       return;
     }
 
@@ -1118,6 +1127,47 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const opponentFlag = isHost ? room.guestCountryFlag : room.hostCountryFlag;
   const opponentScore = isHost ? room.guestScore : room.hostScore;
   const myScore = isHost ? room.hostScore : room.guestScore;
+  const opponentHasAnswered = isHost ? Boolean(room.guestAnswer) : Boolean(room.hostAnswer);
+
+  // -------------------------------------------------------------
+  // WAITING LOBBY (Safety Guard: Never play alone!)
+  // -------------------------------------------------------------
+  if (room.status === 'waiting' && (!room.guestId || room.guestId === '')) {
+    return (
+      <div className="min-h-[100dvh] w-full bg-[#0B0F19] text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 animate-fade-in">
+        <div className="w-full max-w-sm sm:max-w-md bg-[#0E1526] border border-cyan-500/25 rounded-3xl p-6 sm:p-8 shadow-2xl text-center space-y-6">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+            <span className="text-3xl animate-bounce">⏳</span>
+          </div>
+          <div>
+            <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-cyan-400 block mb-1">
+              PRIVATE DUEL LOBBY
+            </span>
+            <h3 className="text-xl sm:text-2xl font-black text-white">Waiting for Friend to Join</h3>
+            <p className="text-xs sm:text-sm text-slate-400 mt-1">
+              Share this 6-character room code. The quiz will start for both of you automatically when they enter.
+            </p>
+          </div>
+          {room.roomCode && (
+            <div className="bg-[#0B0F19] border-2 border-dashed border-cyan-500/40 rounded-2xl p-4">
+              <span className="text-3xl sm:text-4xl font-mono font-black tracking-widest text-cyan-400 block">
+                {room.roomCode}
+              </span>
+            </div>
+          )}
+          <button
+            onClick={() => {
+              sounds.playPop();
+              onExitRoom();
+            }}
+            className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors cursor-pointer"
+          >
+            Cancel and Return
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // -------------------------------------------------------------
   // VICTORY / RESULTS SCREEN
@@ -1378,6 +1428,24 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
               }`}
               style={{ width: `${(timeLeft / roundDurationSeconds) * 100}%` }}
             />
+          </div>
+
+          {/* Dual Live Realtime Progress & Score Sync Bar */}
+          <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-800/80 text-[10px] sm:text-xs">
+            <div className="flex items-center justify-between bg-slate-900/60 px-2 py-1 rounded-lg border border-cyan-500/20">
+              <span className="text-cyan-400 font-bold flex items-center gap-1 truncate">
+                <span className={`w-1.5 h-1.5 rounded-full ${hasAnswered ? 'bg-cyan-400' : 'bg-cyan-400/50 animate-pulse'}`} />
+                <span>You: {hasAnswered ? '⚡ Answered' : 'Thinking...'}</span>
+              </span>
+              <span className="font-mono text-cyan-300 font-black ml-1 shrink-0">{myScore} pts</span>
+            </div>
+            <div className="flex items-center justify-between bg-slate-900/60 px-2 py-1 rounded-lg border border-rose-500/20">
+              <span className={`font-bold flex items-center gap-1 truncate ${opponentHasAnswered ? 'text-rose-400' : 'text-slate-400'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${opponentHasAnswered ? 'bg-rose-400 animate-ping' : 'bg-slate-500'}`} />
+                <span>{opponentName}: {opponentHasAnswered ? '⚡ Answered' : 'Thinking...'}</span>
+              </span>
+              <span className="font-mono text-rose-300 font-black ml-1 shrink-0">{opponentScore} pts</span>
+            </div>
           </div>
         </div>
       </div>

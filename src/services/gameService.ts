@@ -260,10 +260,13 @@ export async function submitPlayerAnswer(
   broadcastFallbackMessage({
     type: 'PLAYER_ANSWER',
     roomId,
+    playerId: activeUid,
     isHost,
     answer: answer ?? '',
     answerTime: typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs,
     scoreDelta: pointsEarned,
+    score: isHost ? fallbackUpdates.hostScore : fallbackUpdates.guestScore,
+    questionIndex: room.currentRound,
   });
 
   // 2. Also persist to Firestore asynchronously
