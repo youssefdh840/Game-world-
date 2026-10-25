@@ -56,13 +56,18 @@ export async function withTimeout<T>(
 }
 
 /**
- * Strips any `undefined` properties from an object before passing to Firestore `setDoc` or `updateDoc`.
+ * Strips any `undefined` properties recursively from objects and arrays before passing to Firestore.
  */
-function sanitizeFirestorePayload<T extends Record<string, unknown>>(payload: T): T {
+function sanitizeFirestorePayload<T>(payload: T): T {
+  if (payload === undefined) return null as unknown as T;
+  if (payload === null || typeof payload !== 'object') return payload;
+  if (Array.isArray(payload)) {
+    return payload.map(sanitizeFirestorePayload) as unknown as T;
+  }
   const cleaned: Record<string, unknown> = {};
-  Object.entries(payload).forEach(([key, value]) => {
+  Object.entries(payload as Record<string, unknown>).forEach(([key, value]) => {
     if (value !== undefined) {
-      cleaned[key] = value;
+      cleaned[key] = sanitizeFirestorePayload(value);
     }
   });
   return cleaned as T;

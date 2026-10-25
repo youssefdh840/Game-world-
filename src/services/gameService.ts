@@ -59,15 +59,16 @@ export {
   type MemoryCard,
 };
 
-function sanitizeUpdates<T extends Record<string, unknown>>(updates: T): T {
+function sanitizeUpdates<T>(updates: T): T {
+  if (updates === undefined) return null as unknown as T;
+  if (updates === null || typeof updates !== 'object') return updates;
+  if (Array.isArray(updates)) {
+    return updates.map(sanitizeUpdates) as unknown as T;
+  }
   const cleaned: Record<string, unknown> = {};
-  Object.entries(updates).forEach(([key, value]) => {
+  Object.entries(updates as Record<string, unknown>).forEach(([key, value]) => {
     if (value !== undefined) {
-      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-        cleaned[key] = sanitizeUpdates(value as Record<string, unknown>);
-      } else {
-        cleaned[key] = value;
-      }
+      cleaned[key] = sanitizeUpdates(value);
     }
   });
   return cleaned as T;
@@ -345,14 +346,6 @@ export async function advanceToNextRoundOrFinish(
   // Also apply to Firestore immediately
   const roomDocRef = doc(db, 'gameRooms', roomId);
   try {
-    const snap = await getDoc(roomDocRef);
-    if (snap.exists()) {
-      const liveData = snap.data() as GameRoom;
-      if (liveData.status === 'finished' || (typeof liveData.currentRound === 'number' && liveData.currentRound >= nextRound)) {
-        return; // Already advanced by the other peer!
-      }
-    }
-
     const fsNextRound = nextRound;
     if (fsNextRound > totalRounds) {
       let winnerId: string | 'tie' = 'tie';

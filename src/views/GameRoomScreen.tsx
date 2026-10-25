@@ -587,7 +587,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       }
     }
 
-    if (hostDone && guestDone) {
+    const bothOnRoom = Boolean(room.hostAnswer) && Boolean(room.guestAnswer);
+
+    if ((hostDone && guestDone) || bothOnRoom) {
       triggerRoundAdvance('both_answered');
     }
   }, [
