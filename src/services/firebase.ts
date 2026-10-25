@@ -49,7 +49,8 @@ export function getActiveFirebaseConfig(): FirebaseConfigType {
       const stored = localStorage.getItem('wc_custom_firebase_config');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (!parsed?.apiKey || typeof parsed.apiKey !== 'string' || parsed.apiKey.length < 10) {
+        // Only accept custom config if it matches the active project ID or has a verified key
+        if (!parsed?.apiKey || typeof parsed.apiKey !== 'string' || parsed.apiKey.length < 10 || parsed.projectId !== (baseFirebaseConfig as FirebaseConfigType).projectId) {
           localStorage.removeItem('wc_custom_firebase_config');
         } else if (parsed?.apiKey && parsed?.projectId) {
           return { ...resolvedBase, ...parsed };

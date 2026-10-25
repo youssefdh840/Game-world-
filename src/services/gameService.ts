@@ -287,14 +287,15 @@ export async function submitPlayerAnswer(
 
 export async function advanceToNextRoundOrFinish(
   roomId: string,
-  room: GameRoom
+  room: GameRoom,
+  targetRound?: number
 ) {
   if (!roomId || roomId.startsWith('room_bot_')) {
     return;
   }
 
   const currentFallback = getFallbackRoom(roomId) || room;
-  const nextRound = (currentFallback.currentRound || 1) + 1;
+  const nextRound = targetRound !== undefined ? targetRound : (currentFallback.currentRound || 1) + 1;
   const totalRounds = currentFallback.totalRounds || currentFallback.questions?.length || 5;
   const now = Date.now();
 

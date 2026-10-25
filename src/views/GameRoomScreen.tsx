@@ -300,6 +300,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         setStartCountdownSec(0);
         setTimeout(() => {
           setStartCountdownSec(null);
+          setRoom((prev) => ({ ...prev, status: 'playing' }));
           sounds.playStart();
         }, 350);
       }
@@ -357,7 +358,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       }));
 
       if (isHostRef.current) {
-        advanceToNextRoundOrFinish(currentRoom.id, currentRoom);
+        advanceToNextRoundOrFinish(currentRoom.id, currentRoom, nextRound);
       }
     } else {
       const nextQuestion = currentRoom.questions ? currentRoom.questions[nextRound - 1] : undefined;
@@ -379,7 +380,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       }));
 
       if (isHostRef.current) {
-        advanceToNextRoundOrFinish(currentRoom.id, currentRoom);
+        advanceToNextRoundOrFinish(currentRoom.id, currentRoom, nextRound);
       }
     }
   };
@@ -414,7 +415,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       const currentRoundNum = roomRef.current.currentRound;
       guestFallbackTimeoutRef.current = setTimeout(() => {
         if (roomRef.current.currentRound === currentRoundNum && roomRef.current.status !== 'finished') {
-          advanceToNextRoundOrFinish(roomRef.current.id, roomRef.current);
+          advanceToNextRoundOrFinish(roomRef.current.id, roomRef.current, currentRoundNum + 1);
         }
       }, 2200);
     }
@@ -433,8 +434,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       return;
     }
 
-    // Do not start question timers until room status has actively transitioned to 'playing' and 3-2-1 countdown has completed
-    if (room.status !== 'playing' || startCountdownSec !== null) {
+    // Do not start question timers until room status has actively transitioned to 'playing'/'ready' and 3-2-1 countdown has completed
+    if ((room.status !== 'playing' && room.status !== 'ready') || startCountdownSec !== null) {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -486,7 +487,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     let startTime = room.roundStartTime || room.roundStartedAt || 0;
 
     // Check if timestamp is missing or stale
-    const isInvalid = !startTime || (now - startTime >= roundDurationMs + 5000) || (startTime > now + 4000);
+    const isInvalid = !startTime || (now - startTime >= roundDurationMs + 5000);
 
     if (isInvalid) {
       if (isHostRef.current) {

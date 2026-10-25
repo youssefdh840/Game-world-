@@ -107,7 +107,7 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
     }
   };
 
-  // Helper to start the 3-2-1 match countdown locked to synchronized startTime
+  // Helper to start the synchronized match locked to shared startTime epoch
   const commenceMatch = (
     room: GameRoom,
     opponent: Partial<UserProfile>,
@@ -125,63 +125,24 @@ export const MatchmakingModal: React.FC<MatchmakingModalProps> = ({
       countryFlag: opponent.countryFlag || '🌍',
       countryName: opponent.countryName || 'Challenger',
     });
-    setStatusText(`Real challenger found: ${opponent.username || 'Opponent'}!`);
+    setStatusText(`Challenger found: ${opponent.username || 'Opponent'}! Entering arena...`);
     sounds.playCorrect();
 
-    let activeStartTime =
+    const activeStartTime =
       syncedStartTime ||
-      (room.roundStartTime && room.roundStartTime > Date.now() ? room.roundStartTime : Date.now() + 3200);
+      (room.roundStartTime && room.roundStartTime > Date.now() ? room.roundStartTime : Date.now() + 3500);
 
-    room.roundStartTime = activeStartTime;
-    room.roundStartedAt = activeStartTime;
-
-    const unsubHandshake = subscribeToFallbackHandshake(room.id, (msg) => {
-      if ((msg.type === 'MATCH_READY' || msg.type === 'GAME_START') && 'startTime' in msg && msg.startTime && msg.startTime > Date.now()) {
-        activeStartTime = msg.startTime;
-        room.roundStartTime = msg.startTime;
-        room.roundStartedAt = msg.startTime;
-      }
-    });
-
-    let lastSec = -1;
-
-    const tick = () => {
-      const remainingMs = activeStartTime - Date.now();
-      const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
-
-      if (remainingSec > 0) {
-        setCountdown(remainingSec);
-        if (remainingSec !== lastSec) {
-          lastSec = remainingSec;
-          sounds.playCountdown();
-        }
-      } else {
-        unsubHandshake();
-        if (cdIntervalRef.current) {
-          clearInterval(cdIntervalRef.current);
-          cdIntervalRef.current = null;
-        }
-        setCountdown(0);
-        room.status = 'playing';
-
-        // Authoritative Host activates match in Firestore
-        const currentUid = auth.currentUser?.uid || safeUser.uid;
-        const mySessionId = getClientSessionId();
-        const isHost = room.hostSessionId
-          ? room.hostSessionId === mySessionId
-          : room.guestSessionId
-          ? room.guestSessionId !== mySessionId
-          : (room.hostId === currentUid || room.hostId === user.uid);
-        if (isHost) {
-          syncRoomRoundStartTime(room.id, activeStartTime);
-        }
-
-        onMatchFound(room);
-      }
+    const synchronizedRoom: GameRoom = {
+      ...room,
+      roundStartTime: activeStartTime,
+      roundStartedAt: activeStartTime,
+      status: 'ready',
     };
 
-    tick();
-    cdIntervalRef.current = setInterval(tick, 50);
+    // Transition smoothly into GameRoomScreen so the synchronized 3-2-1 overlay takes over both screens in lockstep
+    setTimeout(() => {
+      onMatchFound(synchronizedRoom);
+    }, 600);
   };
 
   // Reset modal state when opened/closed & bootstrap auth immediately
