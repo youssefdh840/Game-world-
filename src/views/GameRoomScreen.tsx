@@ -215,6 +215,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const roundStartTimeRef = useRef<number>(Date.now());
   const activeRoundRef = useRef<number>(0);
+  const hasAnsweredCurrentRoundRef = useRef<number>(-1);
   const isAdvancingRoundRef = useRef<boolean>(false);
   const roundTransitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const guestFallbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -286,29 +287,43 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       return;
     }
 
-    let lastSec = -1;
+    let intervalId: NodeJS.Timeout | null = null;
+    let finished = false;
+
+    const stopCountdown = () => {
+      if (finished) return;
+      finished = true;
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+      setStartCountdownSec(null);
+      setRoom((prev) => (prev.status === 'playing' ? prev : { ...prev, status: 'playing' }));
+    };
+
     const checkCountdown = () => {
+      if (finished) return;
       const remainingMs = target - Date.now();
       const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
       if (remainingSec > 0) {
         setStartCountdownSec(remainingSec);
-        if (remainingSec !== lastSec) {
-          lastSec = remainingSec;
-          sounds.playCountdown();
-        }
       } else {
-        setStartCountdownSec(0);
-        setTimeout(() => {
-          setStartCountdownSec(null);
-          setRoom((prev) => ({ ...prev, status: 'playing' }));
-          sounds.playStart();
-        }, 350);
+        stopCountdown();
       }
     };
 
     checkCountdown();
-    const cdInterval = setInterval(checkCountdown, 50);
-    return () => clearInterval(cdInterval);
+    if (!finished) {
+      intervalId = setInterval(checkCountdown, 100);
+    }
+
+    return () => {
+      finished = true;
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
   }, [room.roundStartTime, room.currentRound]);
 
   // Fallback question hydration if room was initialized with empty questions
@@ -443,28 +458,32 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       return;
     }
 
-    // Reset round states
-    setSelectedAnswer(null);
-    setHasAnswered(false);
-    setShowExplanation(false);
-    setSelectedTileIndices([]);
-    setScrambleError(null);
-    setNumberInput('');
-    setNumberGuesses([]);
-    setNumberError(null);
-    setFlippedCardIndices([]);
-    setMatchedPairIds([]);
-    setMovesCount(0);
-    setIncorrectMoves(0);
-    setComboStreak(0);
-    setComboBonusTotal(0);
-    setIsCheckingPair(false);
-    setMemoryScore(0);
-    setLastMatchedCard(null);
-    setMismatchedIndices([]);
-    setLastEarnedPoints(0);
-    isAdvancingRoundRef.current = false;
-    activeRoundRef.current = room.currentRound;
+    // ONLY reset round states if we transitioned to a NEW round!
+    // Never reset player answer states during an active round!
+    if (activeRoundRef.current !== room.currentRound) {
+      activeRoundRef.current = room.currentRound;
+      hasAnsweredCurrentRoundRef.current = -1;
+      setSelectedAnswer(null);
+      setHasAnswered(false);
+      setShowExplanation(false);
+      setSelectedTileIndices([]);
+      setScrambleError(null);
+      setNumberInput('');
+      setNumberGuesses([]);
+      setNumberError(null);
+      setFlippedCardIndices([]);
+      setMatchedPairIds([]);
+      setMovesCount(0);
+      setIncorrectMoves(0);
+      setComboStreak(0);
+      setComboBonusTotal(0);
+      setIsCheckingPair(false);
+      setMemoryScore(0);
+      setLastMatchedCard(null);
+      setMismatchedIndices([]);
+      setLastEarnedPoints(0);
+      isAdvancingRoundRef.current = false;
+    }
 
     // Clean up previous interval/timeouts
     if (timerRef.current) {
@@ -511,8 +530,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     const initialRemaining = Math.max(0, roundDurationSeconds - elapsedInitial);
     setTimeLeft(initialRemaining);
 
-    let lastSoundSecond = -1;
-
     // High-precision interval checking Date.now() against roundStartTimeRef
     timerRef.current = setInterval(() => {
       // Discontinue if round transition is in progress or round changed
@@ -527,11 +544,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       const elapsed = Math.max(0, Math.floor((Date.now() - roundStartTimeRef.current) / 1000));
       const remaining = Math.max(0, roundDurationSeconds - elapsed);
       setTimeLeft(remaining);
-
-      if (remaining <= 3 && remaining > 0 && remaining !== lastSoundSecond) {
-        lastSoundSecond = remaining;
-        sounds.playCountdown();
-      }
 
       if (remaining <= 0) {
         if (timerRef.current) {
@@ -586,7 +598,17 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
   const handleNumberGuessSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (hasAnswered || showExplanation || isAdvancingRoundRef.current || !currentQ || startCountdownSec !== null) return;
+    if (
+      hasAnsweredCurrentRoundRef.current === room.currentRound ||
+      hasAnswered ||
+      selectedAnswer !== null ||
+      showExplanation ||
+      isAdvancingRoundRef.current ||
+      !currentQ ||
+      startCountdownSec !== null
+    ) {
+      return;
+    }
 
     const isHostPlayer = isHostRef.current;
     const activeUid = auth.currentUser?.uid || user.uid;
@@ -617,6 +639,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
     if (num === targetNum) {
       // Cracked the secret number!
+      hasAnsweredCurrentRoundRef.current = room.currentRound;
       sounds.playCorrect();
       const updatedGuesses = [
         ...numberGuesses,
@@ -665,6 +688,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
     if (updatedGuesses.length >= GUESS_NUMBER_MAX_ATTEMPTS) {
       // Out of attempts (6 used)
+      hasAnsweredCurrentRoundRef.current = room.currentRound;
       sounds.playWrong();
       setHasAnswered(true);
       const exhaustedAns = `__OUT_OF_ATTEMPTS_${num}__`;
@@ -703,6 +727,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     if (
       !isMemoryMatch ||
       room.status === 'finished' ||
+      hasAnsweredCurrentRoundRef.current === room.currentRound ||
       hasAnswered ||
       showExplanation ||
       isAdvancingRoundRef.current ||
@@ -789,6 +814,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
         if (isAllMatched) {
           // All pairs matched! Trigger victory celebration
+          hasAnsweredCurrentRoundRef.current = room.currentRound;
           confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
           setHasAnswered(true);
           setSelectedAnswer('matched_all');
@@ -841,6 +867,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    hasAnsweredCurrentRoundRef.current = room.currentRound;
 
     const currentRoom = roomRef.current;
     const isHostPlayer = isHostRef.current;
@@ -905,7 +932,17 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
   // Word Scramble: Verify assembled sequence, allow clear & retry on wrong guess
   const verifyWordScrambleSequence = (indices: number[]) => {
-    if (hasAnswered || showExplanation || isAdvancingRoundRef.current || !currentQ || startCountdownSec !== null) return;
+    if (
+      hasAnsweredCurrentRoundRef.current === room.currentRound ||
+      hasAnswered ||
+      selectedAnswer !== null ||
+      showExplanation ||
+      isAdvancingRoundRef.current ||
+      !currentQ ||
+      startCountdownSec !== null
+    ) {
+      return;
+    }
     const letters = currentQ.options;
     const targetWord = currentQ.correctAnswer.toUpperCase().replace(/[^A-Z]/g, '');
     const candidate = indices.map((i) => letters[i]).join('').toUpperCase();
@@ -914,6 +951,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
     if (candidate === targetWord) {
       // Correct sequence! Lock in answer and award (Base 100 pts + Remaining Seconds x 5)
+      hasAnsweredCurrentRoundRef.current = room.currentRound;
       sounds.playCorrect();
       setHasAnswered(true);
       setSelectedAnswer(candidate);
@@ -1025,7 +1063,17 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   }, [isWordScramble, room.status, hasAnswered, showExplanation, currentQ, selectedTileIndices]);
 
   const handleAnswerSelect = (option: string) => {
-    if (hasAnswered || showExplanation || isAdvancingRoundRef.current || startCountdownSec !== null) return;
+    if (
+      hasAnsweredCurrentRoundRef.current === room.currentRound ||
+      hasAnswered ||
+      selectedAnswer !== null ||
+      showExplanation ||
+      isAdvancingRoundRef.current ||
+      startCountdownSec !== null
+    ) {
+      return;
+    }
+    hasAnsweredCurrentRoundRef.current = room.currentRound;
     setHasAnswered(true);
     setSelectedAnswer(option);
 
@@ -2166,13 +2214,24 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                     }
                   }
 
-                  return (
-                    <button
-                      key={option}
-                      disabled={hasAnswered || startCountdownSec !== null}
-                      onClick={() => handleAnswerSelect(option)}
-                      className={`w-full p-4 sm:p-4.5 rounded-2xl border text-sm sm:text-base font-bold text-left transition-all active:scale-98 flex items-center justify-between gap-2 cursor-pointer ${btnStyle}`}
-                    >
+                    return (
+                      <button
+                        key={option}
+                        disabled={
+                          hasAnswered ||
+                          selectedAnswer !== null ||
+                          hasAnsweredCurrentRoundRef.current === room.currentRound ||
+                          showExplanation ||
+                          isAdvancingRoundRef.current ||
+                          startCountdownSec !== null
+                        }
+                        onClick={() => handleAnswerSelect(option)}
+                        className={`w-full p-4 sm:p-4.5 rounded-2xl border text-sm sm:text-base font-bold text-left transition-all flex items-center justify-between gap-2 ${
+                          hasAnswered || selectedAnswer !== null || hasAnsweredCurrentRoundRef.current === room.currentRound
+                            ? 'pointer-events-none cursor-default select-none'
+                            : 'cursor-pointer active:scale-98'
+                        } ${btnStyle}`}
+                      >
                       <div className="flex items-center gap-3 min-w-0">
                         <span className="w-7 h-7 rounded-lg bg-slate-900 text-amber-400 text-xs flex items-center justify-center font-mono font-bold shrink-0">
                           {String.fromCharCode(65 + idx)}

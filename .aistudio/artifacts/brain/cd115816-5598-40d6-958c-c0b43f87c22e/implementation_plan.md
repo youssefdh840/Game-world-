@@ -99,3 +99,17 @@ Comprehensive security review and multi-layer hardening across Firestore securit
      - Deploy the updated rules via `DeployRules` RPC action.
   4. **Verification**:
      - Run `compile_applet` and `lint_applet` to verify clean build without regressions.
+
+---
+
+### 5. Multiplayer Audio Loop Fix & Single-Answer Locking
+
+- **Problem Addressed**:
+  1. A runaway 50ms interval in `GameRoomScreen.tsx` continuously scheduled bell sound triggers (`sounds.playStart()`) 20 times per second throughout matches.
+  2. The runaway interval continuously re-triggered the round reset effect, resetting `hasAnswered` back to `false` and allowing unlimited option clicks and thousands of illegitimate points.
+- **Resolutions Applied**:
+  - Replaced countdown timer in `GameRoomScreen.tsx` with a self-terminating, clean countdown that terminates immediately and silences match transition sounds.
+  - Implemented `hasAnsweredCurrentRoundRef` in `GameRoomScreen.tsx` to provide immediate synchronous locking on the first answer click.
+  - Guarded round reset logic to strictly execute only when `activeRoundRef.current !== room.currentRound`.
+  - Added `disabled` and `pointer-events-none select-none` to option buttons once answered, guaranteeing that players can only answer once per question.
+
