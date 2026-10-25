@@ -232,6 +232,11 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     setIsHost(currentIsHost);
     const unsubRoom = subscribeToGameRoom(room.id, (updated) => {
       setRoom((prev) => {
+        // Prevent lagging snapshots from pulling client back to earlier round
+        if (updated.currentRound && updated.currentRound < prev.currentRound && prev.status !== 'finished') {
+          return prev;
+        }
+
         const merged = { ...updated };
         // Prevent lagging snapshot from wiping out local player's newly submitted answer for the current round
         if (prev.currentRound === updated.currentRound) {
@@ -353,7 +358,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     }
   }, [room.id]);
 
-  // Execute round advancement (host updates Firestore, local state updates optimistically)
+  // Execute round advancement (updates Firestore immediately, local state updates optimistically)
   const executeAdvanceToNextRound = () => {
     const currentRoom = roomRef.current;
     const nextRound = currentRoom.currentRound + 1;
@@ -372,9 +377,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         winnerId,
       }));
 
-      if (isHostRef.current) {
-        advanceToNextRoundOrFinish(currentRoom.id, currentRoom, nextRound);
-      }
+      advanceToNextRoundOrFinish(currentRoom.id, currentRoom, nextRound);
     } else {
       const nextQuestion = currentRoom.questions ? currentRoom.questions[nextRound - 1] : undefined;
       const now = Date.now();
@@ -394,9 +397,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         roundStartTime: now,
       }));
 
-      if (isHostRef.current) {
-        advanceToNextRoundOrFinish(currentRoom.id, currentRoom, nextRound);
-      }
+      advanceToNextRoundOrFinish(currentRoom.id, currentRoom, nextRound);
     }
   };
 
@@ -483,15 +484,21 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       setMismatchedIndices([]);
       setLastEarnedPoints(0);
       isAdvancingRoundRef.current = false;
+      if (roundTransitionTimeoutRef.current) {
+        clearTimeout(roundTransitionTimeoutRef.current);
+        roundTransitionTimeoutRef.current = null;
+      }
+      if (guestFallbackTimeoutRef.current) {
+        clearTimeout(guestFallbackTimeoutRef.current);
+        guestFallbackTimeoutRef.current = null;
+      }
     }
 
-    // Clean up previous interval/timeouts
+    // Clean up previous interval
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
-    if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
 
     // If current question has not loaded yet, wait for it
     if (!currentQ) return;
@@ -559,8 +566,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
-      if (roundTransitionTimeoutRef.current) clearTimeout(roundTransitionTimeoutRef.current);
-      if (guestFallbackTimeoutRef.current) clearTimeout(guestFallbackTimeoutRef.current);
     };
   }, [room.currentRound, room.id, currentQ?.id, room.status, roundDurationSeconds, roundDurationMs, startCountdownSec]);
 

@@ -63,7 +63,11 @@ function sanitizeUpdates<T extends Record<string, unknown>>(updates: T): T {
   const cleaned: Record<string, unknown> = {};
   Object.entries(updates).forEach(([key, value]) => {
     if (value !== undefined) {
-      cleaned[key] = value;
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        cleaned[key] = sanitizeUpdates(value as Record<string, unknown>);
+      } else {
+        cleaned[key] = value;
+      }
     }
   });
   return cleaned as T;
@@ -341,6 +345,14 @@ export async function advanceToNextRoundOrFinish(
   // Also apply to Firestore immediately
   const roomDocRef = doc(db, 'gameRooms', roomId);
   try {
+    const snap = await getDoc(roomDocRef);
+    if (snap.exists()) {
+      const liveData = snap.data() as GameRoom;
+      if (liveData.status === 'finished' || (typeof liveData.currentRound === 'number' && liveData.currentRound >= nextRound)) {
+        return; // Already advanced by the other peer!
+      }
+    }
+
     const fsNextRound = nextRound;
     if (fsNextRound > totalRounds) {
       let winnerId: string | 'tie' = 'tie';
@@ -350,17 +362,14 @@ export async function advanceToNextRoundOrFinish(
         winnerId = currentFallback.guestId || 'tie';
       }
 
-      const updates = sanitizeUpdates({
+      await updateDoc(roomDocRef, {
         status: 'finished',
         winnerId,
         updatedAt: new Date().toISOString(),
       });
-      await updateDoc(roomDocRef, updates);
     } else {
-      const nextQuestion = currentFallback.questions ? currentFallback.questions[fsNextRound - 1] : undefined;
-      const updates = sanitizeUpdates({
+      await updateDoc(roomDocRef, {
         currentRound: fsNextRound,
-        ...(nextQuestion ? { currentQuestion: nextQuestion } : {}),
         status: 'playing',
         hostAnswer: null,
         hostAnswerTime: null,
@@ -370,7 +379,6 @@ export async function advanceToNextRoundOrFinish(
         roundStartTime: now,
         updatedAt: new Date().toISOString(),
       });
-      await updateDoc(roomDocRef, updates);
     }
   } catch (error) {
     console.warn(`Could not advance round in Firestore (${roomId}):`, error);

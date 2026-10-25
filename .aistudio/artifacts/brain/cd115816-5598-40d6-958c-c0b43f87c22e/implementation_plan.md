@@ -113,3 +113,19 @@ Comprehensive security review and multi-layer hardening across Firestore securit
   - Guarded round reset logic to strictly execute only when `activeRoundRef.current !== room.currentRound`.
   - Added `disabled` and `pointer-events-none select-none` to option buttons once answered, guaranteeing that players can only answer once per question.
 
+---
+
+### 6. Immediate Round Advance Upon Both Players Answering (No 50-Second Wait)
+
+- **Problem Addressed**:
+  - When both players submitted their answers early in a 50-second round, the game was failing to advance immediately due to:
+    1. Redundant nested `currentQuestion` containing `undefined` properties passed to `updateDoc`, causing Firestore updates to silently reject.
+    2. Overzealous `clearTimeout(roundTransitionTimeoutRef.current)` in the timer effect cleanup which cancelled the 1-second advance timeout upon state re-render.
+    3. Host-only advance restriction that prevented the guest from committing the round increment if host lagged.
+- **Resolutions Applied**:
+  - Rewrote `advanceToNextRoundOrFinish` in `gameService.ts` with clean primitive parameters, eliminating nested `undefined` rejections and adding atomic `currentRound >= nextRound` idempotency checks.
+  - Protected `roundTransitionTimeoutRef.current` from being cancelled by timer re-renders so the 1-second transition runs reliably.
+  - Allowed whichever device triggers the advance to update Firestore immediately.
+  - Protected room listener from lagging snapshots pulling clients back into earlier rounds.
+
+
