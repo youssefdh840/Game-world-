@@ -59,9 +59,53 @@ export {
   type MemoryCard,
 };
 
+export function determineIsHost(
+  room: Partial<GameRoom>,
+  userId?: string,
+  tabSessionId?: string
+): boolean {
+  const activeUid = auth.currentUser?.uid || userId || '';
+  const mySessionId =
+    tabSessionId ||
+    (typeof window !== 'undefined' ? sessionStorage.getItem('wc_client_session_id') : '') ||
+    '';
+
+  // 1. Definite Guest match by UID or tab session ID
+  if (
+    (room.guestId && (room.guestId === activeUid || (userId && room.guestId === userId))) ||
+    (room.guestSessionId && mySessionId && room.guestSessionId === mySessionId)
+  ) {
+    return false;
+  }
+
+  // 2. Definite Host match by UID or tab session ID
+  if (
+    (room.hostId && (room.hostId === activeUid || (userId && room.hostId === userId))) ||
+    (room.hostSessionId && mySessionId && room.hostSessionId === mySessionId)
+  ) {
+    return true;
+  }
+
+  // 3. Tab session check
+  if (room.hostSessionId && mySessionId) {
+    return room.hostSessionId === mySessionId;
+  }
+
+  if (room.guestSessionId && mySessionId) {
+    return room.guestSessionId !== mySessionId;
+  }
+
+  return room.hostId === activeUid || (Boolean(userId) && room.hostId === userId);
+}
+
 function sanitizeUpdates<T>(updates: T): T {
   if (updates === undefined) return null as unknown as T;
   if (updates === null || typeof updates !== 'object') return updates;
+  // CRITICAL: Preserve Firestore FieldValue transforms (increment, serverTimestamp) and class instances
+  const proto = Object.getPrototypeOf(updates);
+  if (proto !== Object.prototype && proto !== null) {
+    return updates;
+  }
   if (Array.isArray(updates)) {
     return updates.map(sanitizeUpdates) as unknown as T;
   }
@@ -99,7 +143,7 @@ export function subscribeToGameRoom(
   // 1. Subscribe to fallback (in-memory + localStorage + WebRTC)
   const unsubFallback = subscribeToFallbackRoom(roomId, onUpdate);
 
-  // 2. Subscribe to Firestore
+  // 2. Subscribe to Firestore in real-time
   let unsubFirestore = () => {};
   try {
     unsubFirestore = onSnapshot(
@@ -120,7 +164,28 @@ export function subscribeToGameRoom(
     console.warn('Could not attach Firestore game room listener:', err);
   }
 
+  // 3. Active safety net polling (every 1200ms) for mobile browsers where WebSockets may throttle
+  let isDone = false;
+  const pollInterval = setInterval(async () => {
+    if (isDone) {
+      clearInterval(pollInterval);
+      return;
+    }
+    try {
+      const snap = await getDoc(doc(db, 'gameRooms', roomId));
+      if (snap.exists() && !isDone) {
+        const room = { ...(snap.data() as GameRoom), id: snap.id };
+        saveFallbackRoom(room, false);
+        onUpdate(room);
+      }
+    } catch {
+      // Non-fatal safety poll
+    }
+  }, 1200);
+
   return () => {
+    isDone = true;
+    clearInterval(pollInterval);
     unsubFallback();
     unsubFirestore();
   };
@@ -151,7 +216,9 @@ export async function syncMemoryMatchScore(
   isFinished: boolean = false
 ) {
   if (!roomId || roomId.startsWith('room_bot_')) return;
-  const updates: Record<string, unknown> = {};
+  const updates: Record<string, unknown> = {
+    updatedAt: new Date().toISOString(),
+  };
   if (isHost) {
     updates.hostScore = currentScore;
     if (isFinished) {
@@ -163,7 +230,6 @@ export async function syncMemoryMatchScore(
       updates.guestAnswer = `matched_${currentScore}`;
     }
   }
-  updates.updatedAt = new Date().toISOString();
   updateFallbackRoom(roomId, updates as Partial<GameRoom>);
   try {
     await updateDoc(doc(db, 'gameRooms', roomId), sanitizeUpdates(updates));
@@ -204,11 +270,8 @@ export async function submitPlayerAnswer(
   const isHost =
     typeof isHostOverride === 'boolean'
       ? isHostOverride
-      : (room.hostSessionId && mySessionId)
-      ? room.hostSessionId === mySessionId
-      : (room.guestSessionId && mySessionId)
-      ? room.guestSessionId !== mySessionId
-      : (room.hostId === activeUid || room.hostId === userId);
+      : determineIsHost(room, activeUid, mySessionId || undefined);
+
   const roundDurationMs =
     room.gameMode === 'word_scramble'
       ? WORD_SCRAMBLE_DURATION_MS
@@ -239,18 +302,23 @@ export async function submitPlayerAnswer(
 
   // 1. Update Fallback Storage & Broadcast
   const currentFallback = getFallbackRoom(roomId) || room;
+  const currentHostScore = room.hostScore ?? currentFallback.hostScore ?? 0;
+  const currentGuestScore = room.guestScore ?? currentFallback.guestScore ?? 0;
+  const newHostScore = isHost ? currentHostScore + pointsEarned : currentHostScore;
+  const newGuestScore = !isHost ? currentGuestScore + pointsEarned : currentGuestScore;
+
   const fallbackUpdates: Partial<GameRoom> = {};
   if (isHost) {
     fallbackUpdates.hostAnswer = answer ?? '';
     fallbackUpdates.hostAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
     if (pointsEarned > 0) {
-      fallbackUpdates.hostScore = (currentFallback.hostScore || 0) + pointsEarned;
+      fallbackUpdates.hostScore = newHostScore;
     }
   } else {
     fallbackUpdates.guestAnswer = answer ?? '';
     fallbackUpdates.guestAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
     if (pointsEarned > 0) {
-      fallbackUpdates.guestScore = (currentFallback.guestScore || 0) + pointsEarned;
+      fallbackUpdates.guestScore = newGuestScore;
     }
   }
   updateFallbackRoom(roomId, fallbackUpdates);
@@ -266,27 +334,34 @@ export async function submitPlayerAnswer(
     questionIndex: room.currentRound,
   });
 
-  // 2. Also persist to Firestore asynchronously
-  const updates: Record<string, unknown> = {};
+  // 2. Persist to Firestore: Write absolute scores directly so standard JSON types succeed 100% reliably
+  const updates: Record<string, unknown> = {
+    updatedAt: new Date().toISOString(),
+  };
   if (isHost) {
     updates.hostAnswer = answer ?? '';
     updates.hostAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
     if (pointsEarned > 0) {
-      updates.hostScore = increment(pointsEarned);
+      updates.hostScore = newHostScore;
     }
   } else {
     updates.guestAnswer = answer ?? '';
     updates.guestAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
     if (pointsEarned > 0) {
-      updates.guestScore = increment(pointsEarned);
+      updates.guestScore = newGuestScore;
     }
   }
-  updates.updatedAt = new Date().toISOString();
 
   try {
     await updateDoc(doc(db, 'gameRooms', roomId), sanitizeUpdates(updates));
   } catch (error) {
     console.warn(`Could not update player answer in Firestore (${roomId}):`, error);
+    try {
+      // Direct retry without sanitization wrapper
+      await updateDoc(doc(db, 'gameRooms', roomId), updates);
+    } catch (retryErr) {
+      console.error(`Retry update player answer also failed (${roomId}):`, retryErr);
+    }
   }
 }
 

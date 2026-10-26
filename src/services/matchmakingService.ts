@@ -61,6 +61,11 @@ export async function withTimeout<T>(
 function sanitizeFirestorePayload<T>(payload: T): T {
   if (payload === undefined) return null as unknown as T;
   if (payload === null || typeof payload !== 'object') return payload;
+  // CRITICAL: Preserve Firestore FieldValue transforms and class instances
+  const proto = Object.getPrototypeOf(payload);
+  if (proto !== Object.prototype && proto !== null) {
+    return payload;
+  }
   if (Array.isArray(payload)) {
     return payload.map(sanitizeFirestorePayload) as unknown as T;
   }

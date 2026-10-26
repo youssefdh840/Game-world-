@@ -28,6 +28,7 @@ import {
   calculateMemoryMatchPoints,
   generateMemoryMatchDeck,
   syncMemoryMatchScore,
+  determineIsHost,
   type MemoryCard,
 } from '../services/gameService';
 import { awardGameResults } from '../services/userService';
@@ -106,12 +107,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [hasAnswered, setHasAnswered] = useState<boolean>(false);
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
-  const [isHost, setIsHost] = useState<boolean>(
-    initialRoom.hostSessionId
-      ? initialRoom.hostSessionId === clientTabSessionId
-      : initialRoom.guestSessionId
-      ? initialRoom.guestSessionId !== clientTabSessionId
-      : (initialRoom.hostId === effectiveUid || initialRoom.hostId === user.uid)
+  const [isHost, setIsHost] = useState<boolean>(() =>
+    determineIsHost(initialRoom, effectiveUid, clientTabSessionId)
   );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
@@ -222,15 +219,16 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
   // Subscribe to real-time room updates and chat
   useEffect(() => {
-    const activeUid = auth.currentUser?.uid || user.uid;
     const tabSid = getClientSessionId();
-    const currentIsHost = room.hostSessionId
-      ? room.hostSessionId === tabSid
-      : room.guestSessionId
-      ? room.guestSessionId !== tabSid
-      : (room.hostId === activeUid || room.hostId === user.uid);
+    const currentIsHost = determineIsHost(room, user.uid, tabSid);
     setIsHost(currentIsHost);
+    isHostRef.current = currentIsHost;
+
     const unsubRoom = subscribeToGameRoom(room.id, (updated) => {
+      const liveIsHost = determineIsHost(updated, user.uid, tabSid);
+      setIsHost(liveIsHost);
+      isHostRef.current = liveIsHost;
+
       setRoom((prev) => {
         // Prevent lagging snapshots from pulling client back to earlier round
         if (updated.currentRound && updated.currentRound < prev.currentRound && prev.status !== 'finished') {
@@ -240,11 +238,11 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         const merged = { ...updated };
         // Prevent lagging snapshot from wiping out local player's newly submitted answer for the current round
         if (prev.currentRound === updated.currentRound) {
-          if (isHostRef.current && prev.hostAnswer && !updated.hostAnswer) {
+          if (liveIsHost && prev.hostAnswer && !updated.hostAnswer) {
             merged.hostAnswer = prev.hostAnswer;
             merged.hostAnswerTime = prev.hostAnswerTime;
             merged.hostScore = prev.hostScore;
-          } else if (!isHostRef.current && prev.guestAnswer && !updated.guestAnswer) {
+          } else if (!liveIsHost && prev.guestAnswer && !updated.guestAnswer) {
             merged.guestAnswer = prev.guestAnswer;
             merged.guestAnswerTime = prev.guestAnswerTime;
             merged.guestScore = prev.guestScore;
@@ -683,7 +681,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         timeTaken,
         true,
         roomRef.current,
-        pointsEarned
+        pointsEarned,
+        isHostPlayer
       );
       return;
     }
@@ -722,7 +721,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         timeTaken,
         false,
         roomRef.current,
-        0
+        0,
+        isHostPlayer
       );
     } else {
       sounds.playPop();
@@ -923,9 +923,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     });
 
     if (isHostPlayer && !currentRoom.hostAnswer) {
-      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, roundDurationMs, false, currentRoom, 0);
+      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, roundDurationMs, false, currentRoom, 0, true);
     } else if (!isHostPlayer && !currentRoom.guestAnswer) {
-      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, roundDurationMs, false, currentRoom, 0);
+      submitPlayerAnswer(currentRoom.id, activeUid, fallbackAns, roundDurationMs, false, currentRoom, 0, false);
     }
 
     setRoom((prev) => ({
@@ -1252,7 +1252,19 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const opponentFlag = isHost ? room.guestCountryFlag : room.hostCountryFlag;
   const opponentScore = isHost ? room.guestScore : room.hostScore;
   const myScore = isHost ? room.hostScore : room.guestScore;
-  const opponentHasAnswered = isHost ? Boolean(room.guestAnswer) : Boolean(room.hostAnswer);
+  const opponentAnswer = isHost ? room.guestAnswer : room.hostAnswer;
+  const opponentHasAnswered = Boolean(opponentAnswer && opponentAnswer !== '');
+  const opponentIsCorrect = Boolean(
+    currentQ && opponentAnswer && (
+      isGuessNumber
+        ? opponentAnswer === String(currentQ.targetNumber ?? currentQ.correctAnswer)
+        : isWordScramble
+        ? opponentAnswer.toUpperCase() === currentQ.correctAnswer.toUpperCase().replace(/[^A-Z]/g, '')
+        : isMemoryMatch
+        ? opponentAnswer.startsWith('matched_all')
+        : opponentAnswer === currentQ.correctAnswer
+    )
+  );
 
   // -------------------------------------------------------------
   // WAITING LOBBY (Safety Guard: Never play alone!)
@@ -1623,14 +1635,18 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
             <div className="flex items-center justify-between bg-slate-900/60 px-2 py-1 rounded-lg border border-cyan-500/20">
               <span className="text-cyan-400 font-bold flex items-center gap-1 truncate">
                 <span className={`w-1.5 h-1.5 rounded-full ${hasAnswered ? 'bg-cyan-400' : 'bg-cyan-400/50 animate-pulse'}`} />
-                <span>You: {hasAnswered ? '⚡ Answered' : 'Thinking...'}</span>
+                <span>
+                  You: {hasAnswered ? (showExplanation ? (selectedAnswer === currentQ?.correctAnswer ? '✅ Correct' : '❌ Wrong') : '⚡ Answered') : 'Thinking...'}
+                </span>
               </span>
               <span className="font-mono text-cyan-300 font-black ml-1 shrink-0">{myScore} pts</span>
             </div>
             <div className="flex items-center justify-between bg-slate-900/60 px-2 py-1 rounded-lg border border-rose-500/20">
               <span className={`font-bold flex items-center gap-1 truncate ${opponentHasAnswered ? 'text-rose-400' : 'text-slate-400'}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${opponentHasAnswered ? 'bg-rose-400 animate-ping' : 'bg-slate-500'}`} />
-                <span>{opponentName}: {opponentHasAnswered ? '⚡ Answered' : 'Thinking...'}</span>
+                <span>
+                  {opponentName}: {opponentHasAnswered ? (showExplanation || (hasAnswered && opponentHasAnswered) ? (opponentIsCorrect ? '✅ Correct' : '❌ Wrong') : '⚡ Answered') : 'Thinking...'}
+                </span>
               </span>
               <span className="font-mono text-rose-300 font-black ml-1 shrink-0">{opponentScore} pts</span>
             </div>
@@ -1793,6 +1809,26 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
             {/* Interactive Gameplay Controls: Memory Match vs Guess the Number vs Word Scramble vs Multiple Choice */}
             {isMemoryMatch ? (
               <div className="space-y-4">
+                {/* Realtime Opponent Memory Progress Banner */}
+                <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-[#0E1526] border border-rose-500/25 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-base shrink-0">{opponentFlag}</span>
+                    <span className="font-bold text-slate-300 truncate max-w-[80px] sm:max-w-[120px]">{opponentName}:</span>
+                    {opponentHasAnswered ? (
+                      <span className="text-emerald-400 font-extrabold flex items-center gap-1 shrink-0">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Cleared All 8 Pairs! ⚡</span>
+                      </span>
+                    ) : (
+                      <span className="text-cyan-400 font-medium flex items-center gap-1.5 shrink-0">
+                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                        <span>Matching card pairs...</span>
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-mono font-black text-rose-400 ml-2 shrink-0">{opponentScore} pts</span>
+                </div>
+
                 {/* 4x4 Card Grid (16 Cards, 8 Pairs) */}
                 <div className="bg-[#0E1526] border border-cyan-500/25 rounded-3xl p-3.5 sm:p-5 shadow-2xl space-y-4">
                   <div className="flex items-center justify-between text-xs font-bold px-1">
@@ -1905,6 +1941,30 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
               </div>
             ) : isGuessNumber ? (
               <div className="space-y-4">
+                {/* Realtime Opponent Guess the Number Progress Banner */}
+                <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-[#0E1526] border border-rose-500/25 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-base shrink-0">{opponentFlag}</span>
+                    <span className="font-bold text-slate-300 truncate max-w-[80px] sm:max-w-[120px]">{opponentName}:</span>
+                    {opponentHasAnswered ? (
+                      <span className="text-emerald-400 font-extrabold flex items-center gap-1 shrink-0">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>
+                          {opponentAnswer === String(currentQ.targetNumber ?? currentQ.correctAnswer)
+                            ? '🎯 CRACKED SECRET NUMBER!'
+                            : `Finished round (+${opponentScore} pts)`}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-amber-400 font-medium flex items-center gap-1.5 shrink-0">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                        <span>Testing number guesses...</span>
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-mono font-black text-rose-400 ml-2 shrink-0">{opponentScore} pts</span>
+                </div>
+
                 {/* Latest Hint Banner & Narrowed Bounds */}
                 <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 space-y-4">
                   {(() => {
@@ -2089,6 +2149,26 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
               </div>
             ) : isWordScramble ? (
               <div className="space-y-4">
+                {/* Realtime Opponent Word Scramble Progress Banner */}
+                <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-[#0E1526] border border-rose-500/25 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-base shrink-0">{opponentFlag}</span>
+                    <span className="font-bold text-slate-300 truncate max-w-[80px] sm:max-w-[120px]">{opponentName}:</span>
+                    {opponentHasAnswered ? (
+                      <span className="text-emerald-400 font-extrabold flex items-center gap-1 shrink-0">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Unscrambled word! ⚡ (+{opponentScore} pts)</span>
+                      </span>
+                    ) : (
+                      <span className="text-amber-400 font-medium flex items-center gap-1.5 shrink-0">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                        <span>Unscrambling letters...</span>
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-mono font-black text-rose-400 ml-2 shrink-0">{opponentScore} pts</span>
+                </div>
+
                 {/* Assembled Answer Letter Slots */}
                 <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-5 text-center space-y-3">
                   <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-400 font-bold px-1">
@@ -2208,6 +2288,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                   const isSelected = selectedAnswer === option;
                   const isCorrect = option === currentQ.correctAnswer;
                   const showResult = showExplanation || hasAnswered;
+                  const isOpponentSelected = Boolean(opponentAnswer && opponentAnswer === option);
 
                   let btnStyle = 'bg-slate-800/80 border-slate-700/70 text-slate-100 hover:border-amber-400/60 hover:bg-slate-800';
 
@@ -2216,29 +2297,31 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                       btnStyle = 'bg-emerald-600 border-emerald-400 text-white font-black shadow-lg shadow-emerald-500/20';
                     } else if (isSelected && !isCorrect) {
                       btnStyle = 'bg-rose-600 border-rose-400 text-white font-black';
+                    } else if (isOpponentSelected && !isCorrect) {
+                      btnStyle = 'bg-rose-950/70 border-rose-500 text-rose-200 font-bold ring-2 ring-rose-500/40';
                     } else {
                       btnStyle = 'bg-slate-900/60 border-slate-800/60 text-slate-500';
                     }
                   }
 
-                    return (
-                      <button
-                        key={option}
-                        disabled={
-                          hasAnswered ||
-                          selectedAnswer !== null ||
-                          hasAnsweredCurrentRoundRef.current === room.currentRound ||
-                          showExplanation ||
-                          isAdvancingRoundRef.current ||
-                          startCountdownSec !== null
-                        }
-                        onClick={() => handleAnswerSelect(option)}
-                        className={`w-full p-4 sm:p-4.5 rounded-2xl border text-sm sm:text-base font-bold text-left transition-all flex items-center justify-between gap-2 ${
-                          hasAnswered || selectedAnswer !== null || hasAnsweredCurrentRoundRef.current === room.currentRound
-                            ? 'pointer-events-none cursor-default select-none'
-                            : 'cursor-pointer active:scale-98'
-                        } ${btnStyle}`}
-                      >
+                  return (
+                    <button
+                      key={option}
+                      disabled={
+                        hasAnswered ||
+                        selectedAnswer !== null ||
+                        hasAnsweredCurrentRoundRef.current === room.currentRound ||
+                        showExplanation ||
+                        isAdvancingRoundRef.current ||
+                        startCountdownSec !== null
+                      }
+                      onClick={() => handleAnswerSelect(option)}
+                      className={`w-full p-4 sm:p-4.5 rounded-2xl border text-sm sm:text-base font-bold text-left transition-all flex items-center justify-between gap-2 ${
+                        hasAnswered || selectedAnswer !== null || hasAnsweredCurrentRoundRef.current === room.currentRound
+                          ? 'pointer-events-none cursor-default select-none'
+                          : 'cursor-pointer active:scale-98'
+                      } ${btnStyle}`}
+                    >
                       <div className="flex items-center gap-3 min-w-0">
                         <span className="w-7 h-7 rounded-lg bg-slate-900 text-amber-400 text-xs flex items-center justify-center font-mono font-bold shrink-0">
                           {String.fromCharCode(65 + idx)}
@@ -2246,12 +2329,32 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                         <span className="leading-snug">{option}</span>
                       </div>
 
-                      {showResult && isCorrect && (
-                        <CheckCircle2 className="w-5 h-5 text-white shrink-0" />
-                      )}
-                      {showResult && isSelected && !isCorrect && (
-                        <AlertCircle className="w-5 h-5 text-white shrink-0" />
-                      )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Opponent Selection Chip */}
+                        {showResult && isOpponentSelected && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900/90 border border-rose-400 text-rose-300 text-[10px] font-extrabold shadow-sm animate-fade-in"
+                            title={`${opponentName}'s Choice`}
+                          >
+                            <span>{opponentFlag}</span>
+                            <span className="truncate max-w-[55px] sm:max-w-[75px]">{opponentName}</span>
+                          </span>
+                        )}
+
+                        {/* Local Player Selection Chip */}
+                        {showResult && isSelected && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 border border-cyan-400 text-cyan-200 text-[10px] font-extrabold shadow-sm">
+                            <span>You</span>
+                          </span>
+                        )}
+
+                        {showResult && isCorrect && (
+                          <CheckCircle2 className="w-5 h-5 text-white shrink-0" />
+                        )}
+                        {showResult && isSelected && !isCorrect && (
+                          <AlertCircle className="w-5 h-5 text-white shrink-0" />
+                        )}
+                      </div>
                     </button>
                   );
                 })}
