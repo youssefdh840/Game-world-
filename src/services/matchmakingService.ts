@@ -224,13 +224,14 @@ export async function joinMatchmakingQueue(
   };
   const requestedModeGroup = normalizeMode(preferredCategory);
 
-  // 1. Check if another real player already has an open waiting room in Firestore gameRooms (with strict 1500ms timeout)
+  // 1. Check if another real player already has an open waiting room in Firestore gameRooms
   try {
+    await ensureFirebaseAuth().catch(() => {});
     const q = query(
       collection(db, 'gameRooms'),
       where('status', '==', 'waiting')
     );
-    const snap = await withTimeout(getDocs(q), 5000, null);
+    const snap = await getDocs(q);
 
     if (snap && !snap.empty) {
       const openRooms = snap.docs
@@ -265,13 +266,12 @@ export async function joinMatchmakingQueue(
           updatedAt: new Date().toISOString(),
         });
 
-        // Background Firestore updates to gameRooms
-        withTimeout(updateDoc(doc(db, 'gameRooms', waitingRoom.id), updates as Record<string, unknown>), 5000).catch(() => {});
+        // Await Firestore update so Host listener immediately triggers
+        await updateDoc(doc(db, 'gameRooms', waitingRoom.id), updates as Record<string, unknown>);
 
         const matchedRoom: GameRoom = { ...waitingRoom, ...updates };
         saveFallbackRoom(matchedRoom, true);
 
-        // Step 1: Send GUEST_JOIN and GAME_START sync events to Device B across all transports
         broadcastFallbackMessage({
           type: 'GUEST_JOIN',
           roomId: waitingRoom.id,
@@ -295,58 +295,10 @@ export async function joinMatchmakingQueue(
       }
     }
   } catch (err) {
-    console.warn('Firestore queue search notice, checking fallback queue:', err);
+    console.warn('Firestore queue search error, creating new room:', err);
   }
 
-  // 2. Check local/peer fallback queue for waiting opponents
-  try {
-    const fallbackResult = await joinFallbackQueueService(
-      { ...user, ...player },
-      preferredCategory,
-      targetCountryCode
-    );
-    if (fallbackResult.matchedRoom) {
-      const startTime = fallbackResult.matchedRoom.roundStartTime || Date.now() + 3200;
-      const matchedRoom = {
-        ...fallbackResult.matchedRoom,
-        roundStartTime: startTime,
-        roundStartedAt: startTime,
-        status: 'ready' as const,
-      };
-      saveFallbackRoom(matchedRoom, true);
-      broadcastFallbackMessage({
-        type: 'GAME_START',
-        roomId: fallbackResult.roomId,
-        room: matchedRoom,
-        startTime,
-      });
-
-      return {
-        roomId: fallbackResult.roomId,
-        isHost: false,
-        matchedRoom,
-        startTime,
-        unsubscribe: () => {},
-      };
-    }
-    const roomId = fallbackResult.roomId;
-    const waitingRoom = getFallbackRoom(roomId);
-    if (waitingRoom) {
-      withTimeout(setDoc(doc(db, 'gameRooms', roomId), waitingRoom), 2000).catch(() => {});
-    }
-    return {
-      roomId,
-      isHost: true,
-      unsubscribe: () => {
-        leaveFallbackQueueService(roomId);
-        deleteDoc(doc(db, 'gameRooms', roomId)).catch(() => {});
-      },
-    };
-  } catch (err) {
-    console.warn('Fallback queue notice:', err);
-  }
-
-  // 3. Ultimate safe fallback waiting room creation (instant!)
+  // 2. No open room found: Host creates a real waiting game room directly in Firestore
   const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const roundCount = preferredCategory === 'memory_match' ? 1 : preferredCategory === 'guess_number' ? 3 : 5;
   const questions = await fetchDynamicGameQuestions({
@@ -394,9 +346,14 @@ export async function joinMatchmakingQueue(
 
   saveFallbackRoom(roomData, true);
 
-  withTimeout(setDoc(doc(db, 'gameRooms', roomId), roomData), 6000).catch((error) => {
-    console.warn('Could not create waiting game room in Firestore (fallback active):', error);
-  });
+  // Await Firestore write
+  try {
+    await ensureFirebaseAuth().catch(() => {});
+    await setDoc(doc(db, 'gameRooms', roomId), roomData);
+  } catch (err) {
+    console.error('Failed to create waiting room in Firestore:', err);
+    throw new Error('فشل الانضمام لطابور الانتظار في قاعدة البيانات. يرجى المحاولة ثانية.');
+  }
 
   return {
     roomId,
@@ -649,7 +606,9 @@ export async function createPrivateDuelRoom(
   const player = ensurePlayerIdentity(user);
   const mySessionId = getClientSessionId();
   const roomCode = generateRoomCode();
-  const roomId = `room_code_${roomCode}`;
+  const cleanCode = roomCode.trim().toUpperCase();
+  const roomId = cleanCode;
+  const prefixedRoomId = `room_code_${cleanCode}`;
 
   const roundCount = preferredCategory === 'memory_match' ? 1 : preferredCategory === 'guess_number' ? 3 : 5;
   const questions = await fetchDynamicGameQuestions({
@@ -661,7 +620,7 @@ export async function createPrivateDuelRoom(
 
   const roomData: GameRoom = sanitizeFirestorePayload({
     id: roomId,
-    roomCode,
+    roomCode: cleanCode,
     hostId: player.uid,
     hostSessionId: mySessionId,
     hostUsername: player.username,
@@ -695,18 +654,23 @@ export async function createPrivateDuelRoom(
     updatedAt: new Date().toISOString(),
   }) as unknown as GameRoom;
 
-  // 1. Immediately persist to fallback storage (instant local & peer broker)
+  // 1. Immediately persist to fallback storage
   saveFallbackRoom(roomData, true);
 
-  // 2. Persist to Firestore: Await the write to gameRooms with robust retry
+  // 2. Persist to Firestore: Await the write to BOTH canonical ID and prefixed ID
   let writeSuccess = false;
+  let lastError: unknown = null;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       await ensureFirebaseAuth().catch(() => {});
-      await withTimeout(setDoc(doc(db, 'gameRooms', roomId), roomData), 6500);
+      await Promise.all([
+        setDoc(doc(db, 'gameRooms', cleanCode), roomData),
+        setDoc(doc(db, 'gameRooms', prefixedRoomId), { ...roomData, id: prefixedRoomId }),
+      ]);
       writeSuccess = true;
       break;
     } catch (err) {
+      lastError = err;
       console.warn(`Firestore room creation attempt ${attempt + 1} notice:`, err);
       if (attempt < 3) {
         await new Promise((r) => setTimeout(r, 400));
@@ -715,10 +679,11 @@ export async function createPrivateDuelRoom(
   }
 
   if (!writeSuccess) {
-    console.warn('Firestore room initial write notice: room saved to peer & fallback storage.');
+    const msg = lastError instanceof Error ? lastError.message : String(lastError || 'Unknown error');
+    throw new Error(`فشل إنشاء الغرفة في قاعدة البيانات: ${msg}. تأكد من اتصال الإنترنت وحاول ثانية.`);
   }
 
-  return { room: roomData, roomCode };
+  return { room: roomData, roomCode: cleanCode };
 }
 
 export async function joinPrivateDuelRoom(
@@ -733,13 +698,13 @@ export async function joinPrivateDuelRoom(
   await ensureFirebaseAuth().catch(() => {});
   const player = ensurePlayerIdentity(user);
   const mySessionId = getClientSessionId();
-  const roomId = `room_code_${cleanCode}`;
+  const prefixedRoomId = `room_code_${cleanCode}`;
 
   let currentRoom: GameRoom | null = null;
   let peerStartTime: number | undefined;
 
-  // 1. Check local storage & in-memory fallback (only for multiple tabs on the same machine)
-  const localRoom = getFallbackRoom(cleanCode);
+  // 1. Check local storage fallback (for same device testing)
+  const localRoom = getFallbackRoom(cleanCode) || getFallbackRoom(prefixedRoomId);
   if (localRoom && localRoom.status !== 'finished') {
     const isSameHostTab = localRoom.hostSessionId ? localRoom.hostSessionId === mySessionId : false;
     if (!isSameHostTab) {
@@ -747,26 +712,30 @@ export async function joinPrivateDuelRoom(
     }
   }
 
-  // 2. Query Firestore with resilient retry loop AND WebRTC Peer concurrently
+  // 2. Query Firestore with resilient retry loop
   if (!currentRoom) {
-    const peerPromise = withTimeout(joinGuestPeer(cleanCode, player), 4000, null).catch(() => null);
+    const peerPromise = withTimeout(joinGuestPeer(cleanCode, player), 3000, null).catch(() => null);
 
     const fetchFirestoreWithRetry = async (): Promise<GameRoom | null> => {
       await ensureFirebaseAuth().catch(() => {});
 
       for (let attempt = 0; attempt < 6; attempt++) {
         try {
-          // Check gameRooms/room_code_CODE directly
-          const snap1 = await withTimeout(getDoc(doc(db, 'gameRooms', roomId)), 4500, null);
+          // A. Direct doc lookup: gameRooms/CODE
+          const snap1 = await getDoc(doc(db, 'gameRooms', cleanCode));
           if (snap1 && snap1.exists()) {
             return { ...(snap1.data() as GameRoom), id: snap1.id };
           }
 
-          // Query gameRooms by roomCode property
-          const qSnap = await withTimeout(
-            getDocs(query(collection(db, 'gameRooms'), where('roomCode', '==', cleanCode))),
-            4500,
-            null
+          // B. Direct doc lookup: gameRooms/room_code_CODE
+          const snap2 = await getDoc(doc(db, 'gameRooms', prefixedRoomId));
+          if (snap2 && snap2.exists()) {
+            return { ...(snap2.data() as GameRoom), id: snap2.id };
+          }
+
+          // C. Query gameRooms by roomCode property
+          const qSnap = await getDocs(
+            query(collection(db, 'gameRooms'), where('roomCode', '==', cleanCode))
           );
           if (qSnap && !qSnap.empty) {
             const doc0 = qSnap.docs[0];
@@ -776,9 +745,8 @@ export async function joinPrivateDuelRoom(
           console.warn(`Firestore lookup retry attempt ${attempt + 1} notice:`, err);
         }
 
-        // Wait between retries to allow Host device's write to finish propagating globally
         if (attempt < 5) {
-          await new Promise((res) => setTimeout(res, 500));
+          await new Promise((res) => setTimeout(res, 450));
         }
       }
       return null;
@@ -791,27 +759,27 @@ export async function joinPrivateDuelRoom(
       currentRoom = peerRes.room;
       peerStartTime = peerRes.startTime;
     } else {
-      currentRoom = getFallbackRoom(cleanCode);
+      currentRoom = getFallbackRoom(cleanCode) || getFallbackRoom(prefixedRoomId);
     }
   }
 
   if (!currentRoom) {
-    throw new Error(`Room code "${cleanCode}" not found. Please double-check the code with your friend.`);
+    throw new Error(`الرمز "${cleanCode}" غير موجود. يرجى التأكد من الرمز المدخل والمحاولة مجدداً.`);
   }
 
   if (currentRoom.status === 'finished') {
-    throw new Error('This game match has already finished.');
+    throw new Error('هذه المباراة انتهت بالفعل.');
   }
 
   const isSameHostTab = currentRoom.hostSessionId
     ? currentRoom.hostSessionId === mySessionId
     : (player.uid && currentRoom.hostId === player.uid && !currentRoom.guestId);
   if (isSameHostTab) {
-    throw new Error('You generated this code on this device. Share this code with a friend or open another window to test joining!');
+    throw new Error('لقد قمت بإنشاء هذا الرمز على هذا الجهاز! شارك الرمز مع صديق للعب معاً.');
   }
 
   if (currentRoom.guestId && currentRoom.guestId !== '' && currentRoom.guestId !== player.uid && currentRoom.guestSessionId !== mySessionId) {
-    throw new Error('This room is already full (another player joined).');
+    throw new Error('هذه الغرفة ممتلئة بالفعل (انضم لاعب آخر).');
   }
 
   const startTime =
@@ -837,10 +805,8 @@ export async function joinPrivateDuelRoom(
 
   const updatedRoom: GameRoom = { ...currentRoom, ...updates };
 
-  // Update fallback storage & broadcast immediately
   saveFallbackRoom(updatedRoom, true);
 
-  // Send GUEST_JOIN and MATCH_ACK sync events across all transports
   broadcastFallbackMessage({
     type: 'GUEST_JOIN',
     roomId: currentRoom.id,
@@ -861,13 +827,16 @@ export async function joinPrivateDuelRoom(
     hostSessionId: currentRoom.hostSessionId || '',
   });
 
-  // Await Firestore write so Host's listener immediately catches it
+  // Await Firestore write across BOTH IDs so Host listener catches it 100% reliably
   try {
     await ensureFirebaseAuth().catch(() => {});
-    await withTimeout(
-      updateDoc(doc(db, 'gameRooms', currentRoom.id || roomId), updates as Record<string, unknown>),
-      6000
-    );
+    await Promise.all([
+      updateDoc(doc(db, 'gameRooms', cleanCode), updates as Record<string, unknown>).catch(() => {}),
+      updateDoc(doc(db, 'gameRooms', prefixedRoomId), updates as Record<string, unknown>).catch(() => {}),
+      ...(currentRoom.id && currentRoom.id !== cleanCode && currentRoom.id !== prefixedRoomId
+        ? [updateDoc(doc(db, 'gameRooms', currentRoom.id), updates as Record<string, unknown>).catch(() => {})]
+        : []),
+    ]);
   } catch (upErr) {
     console.warn('Firestore guest join write notice:', upErr);
   }
@@ -881,6 +850,9 @@ export function listenToPrivateRoomHost(
 ) {
   let hasTriggered = false;
   const mySessionId = getClientSessionId();
+
+  const cleanCode = roomId.replace(/^room_code_/, '');
+  const prefixedRoomId = `room_code_${cleanCode}`;
 
   const handleUpdate = (room: GameRoom, explicitStartTime?: number) => {
     if (hasTriggered) return;
@@ -903,7 +875,6 @@ export function listenToPrivateRoomHost(
 
       saveFallbackRoom(readyRoom, true);
 
-      // Broadcast MATCH_READY with synchronized startTime to all tabs/devices
       broadcastFallbackMessage({
         type: 'MATCH_READY',
         roomId: room.id,
@@ -912,10 +883,10 @@ export function listenToPrivateRoomHost(
         hostSessionId: mySessionId,
       });
 
-      // Update Firestore doc asynchronously
-      withTimeout(
+      // Update both Firestore docs
+      Promise.all([
         updateDoc(
-          doc(db, 'gameRooms', room.id),
+          doc(db, 'gameRooms', cleanCode),
           sanitizeFirestorePayload({
             status: 'ready',
             hostReady: true,
@@ -923,68 +894,90 @@ export function listenToPrivateRoomHost(
             roundStartedAt: startTime,
             updatedAt: new Date().toISOString(),
           }) as Record<string, unknown>
-        ),
-        5000
-      ).catch(() => {});
+        ).catch(() => {}),
+        updateDoc(
+          doc(db, 'gameRooms', prefixedRoomId),
+          sanitizeFirestorePayload({
+            status: 'ready',
+            hostReady: true,
+            roundStartTime: startTime,
+            roundStartedAt: startTime,
+            updatedAt: new Date().toISOString(),
+          }) as Record<string, unknown>
+        ).catch(() => {}),
+      ]).catch(() => {});
 
       onGuestJoined(readyRoom, startTime);
     }
   };
 
   // 1. Subscribe to fallback / BroadcastChannel / LocalStorage
-  const unsubFallback = subscribeToFallbackRoom(roomId, (room) => {
-    handleUpdate(room);
-  });
+  const unsubFallback1 = subscribeToFallbackRoom(cleanCode, (room) => handleUpdate(room));
+  const unsubFallback2 = subscribeToFallbackRoom(prefixedRoomId, (room) => handleUpdate(room));
 
-  // 2. If room has a 6-digit code, also initialize WebRTC Host Peer
+  // 2. WebRTC Host Peer if code is available
   let unsubPeer: (() => void) | null = null;
-  const codeMatch = roomId.match(/room_code_([A-Z0-9]{6})/i);
-  const currentInitial = getFallbackRoom(roomId);
-  if (codeMatch && codeMatch[1] && currentInitial) {
-    unsubPeer = initHostPeer(codeMatch[1], currentInitial, (updatedRoom, peerStartTime) => {
+  const currentInitial = getFallbackRoom(cleanCode) || getFallbackRoom(prefixedRoomId);
+  if (cleanCode.length === 6 && currentInitial) {
+    unsubPeer = initHostPeer(cleanCode, currentInitial, (updatedRoom, peerStartTime) => {
       handleUpdate(updatedRoom, peerStartTime);
     });
   }
 
-  // 3. Listen to Firestore gameRooms collection in real time
-  let unsubGameRooms: (() => void) | null = null;
+  // 3. Listen to Firestore gameRooms collection on BOTH cleanCode and prefixedRoomId
+  let unsubGameRooms1: (() => void) | null = null;
+  let unsubGameRooms2: (() => void) | null = null;
   try {
-    unsubGameRooms = onSnapshot(
-      doc(db, 'gameRooms', roomId),
+    unsubGameRooms1 = onSnapshot(
+      doc(db, 'gameRooms', cleanCode),
       (snap) => {
         if (snap.exists()) {
           handleUpdate({ ...(snap.data() as GameRoom), id: snap.id });
         }
       },
-      (err) => {
-        console.warn('GameRooms listener notice (using peer & storage fallback):', err);
-      }
+      (err) => console.warn('GameRooms cleanCode listener notice:', err)
+    );
+    unsubGameRooms2 = onSnapshot(
+      doc(db, 'gameRooms', prefixedRoomId),
+      (snap) => {
+        if (snap.exists()) {
+          handleUpdate({ ...(snap.data() as GameRoom), id: snap.id });
+        }
+      },
+      (err) => console.warn('GameRooms prefixedRoomId listener notice:', err)
     );
   } catch (err) {
     console.warn('Firestore listener attachment notice:', err);
   }
 
-  // 4. Active polling safety net (every 1000ms) in case mobile browser throttled WebSocket
+  // 4. Active polling safety net (every 800ms) for mobile background / WebSocket lags
   const pollTimer = setInterval(async () => {
     if (hasTriggered) {
       clearInterval(pollTimer);
       return;
     }
     try {
-      const snap = await getDoc(doc(db, 'gameRooms', roomId));
-      if (snap.exists()) {
-        handleUpdate({ ...(snap.data() as GameRoom), id: snap.id });
+      const snap1 = await getDoc(doc(db, 'gameRooms', cleanCode));
+      if (snap1.exists()) {
+        handleUpdate({ ...(snap1.data() as GameRoom), id: snap1.id });
+        return;
+      }
+      const snap2 = await getDoc(doc(db, 'gameRooms', prefixedRoomId));
+      if (snap2.exists()) {
+        handleUpdate({ ...(snap2.data() as GameRoom), id: snap2.id });
       }
     } catch {
       // non-fatal poll
     }
-  }, 1000);
+  }, 800);
 
   return () => {
     hasTriggered = true;
     clearInterval(pollTimer);
-    unsubFallback();
+    unsubFallback1();
+    unsubFallback2();
     if (unsubPeer) unsubPeer();
-    if (unsubGameRooms) unsubGameRooms();
+    if (unsubGameRooms1) unsubGameRooms1();
+    if (unsubGameRooms2) unsubGameRooms2();
   };
 }

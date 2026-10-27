@@ -120,15 +120,36 @@ function sanitizeUpdates<T>(updates: T): T {
 
 export async function getGameRoom(roomId: string): Promise<GameRoom | null> {
   if (!roomId) return null;
+  const { cleanCode, altRoomId } = getDualRoomDocRefs(roomId);
   try {
     const snap = await getDoc(doc(db, 'gameRooms', roomId));
     if (snap.exists()) {
       return { ...(snap.data() as GameRoom), id: snap.id };
     }
+    if (altRoomId) {
+      const altSnap = await getDoc(doc(db, 'gameRooms', altRoomId));
+      if (altSnap.exists()) {
+        return { ...(altSnap.data() as GameRoom), id: altSnap.id };
+      }
+    }
   } catch (error) {
     console.warn(`Could not fetch game room from Firestore (${roomId}), using fallback:`, error);
   }
-  return getFallbackRoom(roomId);
+  return getFallbackRoom(roomId) || (altRoomId ? getFallbackRoom(altRoomId) : null);
+}
+
+export function getDualRoomDocRefs(roomId: string) {
+  const cleanCode = roomId.replace(/^room_code_/, '');
+  const altRoomId = roomId.startsWith('room_code_')
+    ? cleanCode
+    : cleanCode.length === 6
+    ? `room_code_${cleanCode}`
+    : null;
+  const refs = [doc(db, 'gameRooms', roomId)];
+  if (altRoomId && altRoomId !== roomId) {
+    refs.push(doc(db, 'gameRooms', altRoomId));
+  }
+  return { refs, cleanCode, altRoomId };
 }
 
 export function subscribeToGameRoom(
@@ -140,31 +161,48 @@ export function subscribeToGameRoom(
     return () => {};
   }
 
-  // 1. Subscribe to fallback (in-memory + localStorage + WebRTC)
-  const unsubFallback = subscribeToFallbackRoom(roomId, onUpdate);
+  const cleanCode = roomId.replace(/^room_code_/, '');
+  const altRoomId = roomId.startsWith('room_code_') ? cleanCode : cleanCode.length === 6 ? `room_code_${cleanCode}` : null;
 
-  // 2. Subscribe to Firestore in real-time
-  let unsubFirestore = () => {};
+  // 1. Subscribe to fallback (in-memory + localStorage + WebRTC)
+  const unsubFallback1 = subscribeToFallbackRoom(roomId, onUpdate);
+  const unsubFallback2 = altRoomId ? subscribeToFallbackRoom(altRoomId, onUpdate) : () => {};
+
+  // 2. Subscribe to Firestore in real-time on primary and alt ID
+  let unsubFirestore1 = () => {};
+  let unsubFirestore2 = () => {};
+
+  const handleSnap = (snap: any) => {
+    if (snap.exists()) {
+      const room = { ...(snap.data() as GameRoom), id: snap.id };
+      saveFallbackRoom(room, false);
+      onUpdate(room);
+    }
+  };
+
   try {
-    unsubFirestore = onSnapshot(
+    unsubFirestore1 = onSnapshot(
       doc(db, 'gameRooms', roomId),
-      (snap) => {
-        if (snap.exists()) {
-          const room = { ...(snap.data() as GameRoom), id: snap.id };
-          saveFallbackRoom(room, false);
-          onUpdate(room);
-        }
-      },
+      handleSnap,
       (error) => {
         if (onError) onError(error);
         console.warn(`Game room snapshot notice (${roomId}):`, error);
       }
     );
+    if (altRoomId) {
+      unsubFirestore2 = onSnapshot(
+        doc(db, 'gameRooms', altRoomId),
+        handleSnap,
+        (error) => {
+          console.warn(`Game room alt snapshot notice (${altRoomId}):`, error);
+        }
+      );
+    }
   } catch (err) {
     console.warn('Could not attach Firestore game room listener:', err);
   }
 
-  // 3. Active safety net polling (every 1200ms) for mobile browsers where WebSockets may throttle
+  // 3. Active safety net polling (every 900ms) for mobile browsers
   let isDone = false;
   const pollInterval = setInterval(async () => {
     if (isDone) {
@@ -174,20 +212,27 @@ export function subscribeToGameRoom(
     try {
       const snap = await getDoc(doc(db, 'gameRooms', roomId));
       if (snap.exists() && !isDone) {
-        const room = { ...(snap.data() as GameRoom), id: snap.id };
-        saveFallbackRoom(room, false);
-        onUpdate(room);
+        handleSnap(snap);
+        return;
+      }
+      if (altRoomId) {
+        const altSnap = await getDoc(doc(db, 'gameRooms', altRoomId));
+        if (altSnap.exists() && !isDone) {
+          handleSnap(altSnap);
+        }
       }
     } catch {
       // Non-fatal safety poll
     }
-  }, 1200);
+  }, 900);
 
   return () => {
     isDone = true;
     clearInterval(pollInterval);
-    unsubFallback();
-    unsubFirestore();
+    unsubFallback1();
+    unsubFallback2();
+    unsubFirestore1();
+    unsubFirestore2();
   };
 }
 
@@ -216,6 +261,7 @@ export async function syncMemoryMatchScore(
   isFinished: boolean = false
 ) {
   if (!roomId || roomId.startsWith('room_bot_')) return;
+  const { refs, altRoomId } = getDualRoomDocRefs(roomId);
   const updates: Record<string, unknown> = {
     updatedAt: new Date().toISOString(),
   };
@@ -231,8 +277,10 @@ export async function syncMemoryMatchScore(
     }
   }
   updateFallbackRoom(roomId, updates as Partial<GameRoom>);
+  if (altRoomId) updateFallbackRoom(altRoomId, updates as Partial<GameRoom>);
   try {
-    await updateDoc(doc(db, 'gameRooms', roomId), sanitizeUpdates(updates));
+    const cleanUpdates = sanitizeUpdates(updates);
+    await Promise.all(refs.map((r) => updateDoc(r, cleanUpdates).catch(() => {})));
   } catch (error) {
     console.warn('syncMemoryMatchScore notice:', error);
   }
@@ -321,7 +369,10 @@ export async function submitPlayerAnswer(
       fallbackUpdates.guestScore = newGuestScore;
     }
   }
+  const { refs, altRoomId } = getDualRoomDocRefs(roomId);
   updateFallbackRoom(roomId, fallbackUpdates);
+  if (altRoomId) updateFallbackRoom(altRoomId, fallbackUpdates);
+
   broadcastFallbackMessage({
     type: 'PLAYER_ANSWER',
     roomId,
@@ -334,7 +385,7 @@ export async function submitPlayerAnswer(
     questionIndex: room.currentRound,
   });
 
-  // 2. Persist to Firestore: Write absolute scores directly so standard JSON types succeed 100% reliably
+  // 2. Persist to Firestore: Write absolute scores directly to both documents
   const updates: Record<string, unknown> = {
     updatedAt: new Date().toISOString(),
   };
@@ -353,12 +404,12 @@ export async function submitPlayerAnswer(
   }
 
   try {
-    await updateDoc(doc(db, 'gameRooms', roomId), sanitizeUpdates(updates));
+    const cleanUpdates = sanitizeUpdates(updates);
+    await Promise.all(refs.map((r) => updateDoc(r, cleanUpdates)));
   } catch (error) {
     console.warn(`Could not update player answer in Firestore (${roomId}):`, error);
     try {
-      // Direct retry without sanitization wrapper
-      await updateDoc(doc(db, 'gameRooms', roomId), updates);
+      await Promise.all(refs.map((r) => updateDoc(r, updates).catch(() => {})));
     } catch (retryErr) {
       console.error(`Retry update player answer also failed (${roomId}):`, retryErr);
     }
@@ -378,6 +429,7 @@ export async function advanceToNextRoundOrFinish(
   const nextRound = targetRound !== undefined ? targetRound : (currentFallback.currentRound || 1) + 1;
   const totalRounds = currentFallback.totalRounds || currentFallback.questions?.length || 5;
   const now = Date.now();
+  const { refs, altRoomId } = getDualRoomDocRefs(roomId);
 
   if (nextRound > totalRounds) {
     let winnerId: string | 'tie' = 'tie';
@@ -390,6 +442,12 @@ export async function advanceToNextRoundOrFinish(
       status: 'finished',
       winnerId,
     });
+    if (altRoomId) {
+      updateFallbackRoom(altRoomId, {
+        status: 'finished',
+        winnerId,
+      });
+    }
     broadcastFallbackMessage({
       type: 'ADVANCE_ROUND',
       roomId,
@@ -398,7 +456,7 @@ export async function advanceToNextRoundOrFinish(
     });
   } else {
     const nextQuestion = currentFallback.questions ? currentFallback.questions[nextRound - 1] : undefined;
-    updateFallbackRoom(roomId, {
+    const advanceData: Partial<GameRoom> = {
       currentRound: nextRound,
       ...(nextQuestion ? { currentQuestion: nextQuestion } : {}),
       status: 'playing',
@@ -408,7 +466,10 @@ export async function advanceToNextRoundOrFinish(
       guestAnswerTime: null,
       roundStartedAt: now,
       roundStartTime: now,
-    });
+    };
+    updateFallbackRoom(roomId, advanceData);
+    if (altRoomId) updateFallbackRoom(altRoomId, advanceData);
+
     broadcastFallbackMessage({
       type: 'ADVANCE_ROUND',
       roomId,
@@ -418,8 +479,7 @@ export async function advanceToNextRoundOrFinish(
     });
   }
 
-  // Also apply to Firestore immediately
-  const roomDocRef = doc(db, 'gameRooms', roomId);
+  // Also apply to Firestore immediately on all document references
   try {
     const fsNextRound = nextRound;
     if (fsNextRound > totalRounds) {
@@ -430,23 +490,31 @@ export async function advanceToNextRoundOrFinish(
         winnerId = currentFallback.guestId || 'tie';
       }
 
-      await updateDoc(roomDocRef, {
-        status: 'finished',
-        winnerId,
-        updatedAt: new Date().toISOString(),
-      });
+      await Promise.all(
+        refs.map((r) =>
+          updateDoc(r, {
+            status: 'finished',
+            winnerId,
+            updatedAt: new Date().toISOString(),
+          }).catch(() => {})
+        )
+      );
     } else {
-      await updateDoc(roomDocRef, {
-        currentRound: fsNextRound,
-        status: 'playing',
-        hostAnswer: null,
-        hostAnswerTime: null,
-        guestAnswer: null,
-        guestAnswerTime: null,
-        roundStartedAt: now,
-        roundStartTime: now,
-        updatedAt: new Date().toISOString(),
-      });
+      await Promise.all(
+        refs.map((r) =>
+          updateDoc(r, {
+            currentRound: fsNextRound,
+            status: 'playing',
+            hostAnswer: null,
+            hostAnswerTime: null,
+            guestAnswer: null,
+            guestAnswerTime: null,
+            roundStartedAt: now,
+            roundStartTime: now,
+            updatedAt: new Date().toISOString(),
+          }).catch(() => {})
+        )
+      );
     }
   } catch (error) {
     console.warn(`Could not advance round in Firestore (${roomId}):`, error);
@@ -455,21 +523,27 @@ export async function advanceToNextRoundOrFinish(
 
 export async function syncRoomRoundStartTime(roomId: string, startTime: number) {
   if (!roomId || roomId.startsWith('room_bot_')) return;
+  const { refs, altRoomId } = getDualRoomDocRefs(roomId);
   updateFallbackRoom(roomId, {
     status: 'playing',
     roundStartTime: startTime,
     roundStartedAt: startTime,
   });
+  if (altRoomId) {
+    updateFallbackRoom(altRoomId, {
+      status: 'playing',
+      roundStartTime: startTime,
+      roundStartedAt: startTime,
+    });
+  }
   try {
-    await updateDoc(
-      doc(db, 'gameRooms', roomId),
-      sanitizeUpdates({
-        status: 'playing',
-        roundStartTime: startTime,
-        roundStartedAt: startTime,
-        updatedAt: new Date().toISOString(),
-      })
-    );
+    const payload = sanitizeUpdates({
+      status: 'playing',
+      roundStartTime: startTime,
+      roundStartedAt: startTime,
+      updatedAt: new Date().toISOString(),
+    });
+    await Promise.all(refs.map((r) => updateDoc(r, payload).catch(() => {})));
   } catch (err) {
     console.warn(`Could not sync roundStartTime for ${roomId}:`, err);
   }
@@ -481,20 +555,19 @@ export async function forfeitGame(
   currentRoom: GameRoom
 ) {
   if (!roomId || roomId.startsWith('room_bot_')) return;
+  const { refs } = getDualRoomDocRefs(roomId);
   const activeUid = auth.currentUser?.uid || forfeitingUserId || 'unknown';
   const isHost = currentRoom.hostId === activeUid || currentRoom.hostId === forfeitingUserId;
   const winnerId = isHost ? currentRoom.guestId : currentRoom.hostId;
   try {
-    await updateDoc(
-      doc(db, 'gameRooms', roomId),
-      sanitizeUpdates({
-        status: 'finished',
-        winnerId: winnerId || 'tie',
-        forfeitBy: activeUid,
-        abandonedBy: activeUid,
-        updatedAt: new Date().toISOString(),
-      })
-    );
+    const payload = sanitizeUpdates({
+      status: 'finished',
+      winnerId: winnerId || 'tie',
+      forfeitBy: activeUid,
+      abandonedBy: activeUid,
+      updatedAt: new Date().toISOString(),
+    });
+    await Promise.all(refs.map((r) => updateDoc(r, payload).catch(() => {})));
   } catch (err) {
     console.warn(`Could not record game forfeit (${roomId}):`, err);
   }
@@ -502,8 +575,9 @@ export async function forfeitGame(
 
 export async function deleteGameRoom(roomId: string) {
   if (roomId.startsWith('room_bot_')) return;
+  const { refs } = getDualRoomDocRefs(roomId);
   try {
-    await deleteDoc(doc(db, 'gameRooms', roomId));
+    await Promise.all(refs.map((r) => deleteDoc(r).catch(() => {})));
   } catch (err) {
     console.warn(`Could not delete game room (${roomId}):`, err);
   }
@@ -517,25 +591,58 @@ export function subscribeToRoomMessages(
   if (!roomId || roomId.startsWith('room_bot_')) {
     return () => {};
   }
-  const q = query(
+  const { altRoomId } = getDualRoomDocRefs(roomId);
+
+  const seenIds = new Set<string>();
+  let allMsgs: ChatMessage[] = [];
+
+  const handleDocs = (snapDocs: any[]) => {
+    let changed = false;
+    snapDocs.forEach((d) => {
+      if (!seenIds.has(d.id)) {
+        seenIds.add(d.id);
+        allMsgs.push({ ...(d.data() as ChatMessage), id: d.id });
+        changed = true;
+      }
+    });
+    if (changed) {
+      allMsgs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      callback([...allMsgs]);
+    }
+  };
+
+  const q1 = query(
     collection(db, 'gameRooms', roomId, 'messages'),
     orderBy('createdAt', 'asc'),
     limit(50)
   );
 
-  return onSnapshot(
-    q,
-    (snap) => {
-      const messages = snap.docs.map((d) => ({
-        ...(d.data() as ChatMessage),
-        id: d.id,
-      }));
-      callback(messages);
-    },
+  const unsub1 = onSnapshot(
+    q1,
+    (snap) => handleDocs(snap.docs),
     (error) => {
       console.warn(`Chat messages snapshot warning (${roomId}):`, error);
     }
   );
+
+  let unsub2 = () => {};
+  if (altRoomId) {
+    const q2 = query(
+      collection(db, 'gameRooms', altRoomId, 'messages'),
+      orderBy('createdAt', 'asc'),
+      limit(50)
+    );
+    unsub2 = onSnapshot(
+      q2,
+      (snap) => handleDocs(snap.docs),
+      () => {}
+    );
+  }
+
+  return () => {
+    unsub1();
+    unsub2();
+  };
 }
 
 export async function sendRoomChatMessage(
@@ -547,6 +654,8 @@ export async function sendRoomChatMessage(
   if (!roomId || roomId.startsWith('room_bot_')) return;
   const sanitizedText = sanitizeChatMessage(text);
   if (!sanitizedText && type === 'text') return;
+
+  const { altRoomId } = getDualRoomDocRefs(roomId);
 
   const messageData = sanitizeUpdates({
     roomId,
@@ -560,7 +669,12 @@ export async function sendRoomChatMessage(
   });
 
   try {
-    await addDoc(collection(db, 'gameRooms', roomId, 'messages'), messageData);
+    await Promise.all([
+      addDoc(collection(db, 'gameRooms', roomId, 'messages'), messageData),
+      ...(altRoomId
+        ? [addDoc(collection(db, 'gameRooms', altRoomId, 'messages'), messageData).catch(() => {})]
+        : []),
+    ]);
   } catch (error) {
     console.warn(`Could not send chat message (${roomId}):`, error);
   }

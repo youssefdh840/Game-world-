@@ -31,7 +31,7 @@ export interface FirebaseConfigType {
 }
 
 export function getActiveFirebaseConfig(): FirebaseConfigType {
-  // 1. Resolve base configuration with environment variable overrides
+  // Always resolve from the provisioned firebase-applet-config.json
   const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : ({} as Record<string, string>);
   const resolvedBase: FirebaseConfigType = {
     apiKey: (env.VITE_FIREBASE_API_KEY as string) || (baseFirebaseConfig as FirebaseConfigType).apiKey || '',
@@ -41,21 +41,13 @@ export function getActiveFirebaseConfig(): FirebaseConfigType {
     messagingSenderId: (env.VITE_FIREBASE_MESSAGING_SENDER_ID as string) || (baseFirebaseConfig as FirebaseConfigType).messagingSenderId || '',
     appId: (env.VITE_FIREBASE_APP_ID as string) || (baseFirebaseConfig as FirebaseConfigType).appId || '',
     measurementId: (env.VITE_FIREBASE_MEASUREMENT_ID as string) || (baseFirebaseConfig as FirebaseConfigType).measurementId || '',
-    firestoreDatabaseId: (env.VITE_FIREBASE_DATABASE_ID as string) || (baseFirebaseConfig as FirebaseConfigType).firestoreDatabaseId || '(default)',
+    firestoreDatabaseId: (baseFirebaseConfig as FirebaseConfigType).firestoreDatabaseId || (env.VITE_FIREBASE_DATABASE_ID as string) || 'ai-studio-cd115816-5598-40d6-958c-c0b43f87c22e',
   };
 
   if (typeof window !== 'undefined') {
     try {
-      const stored = localStorage.getItem('wc_custom_firebase_config');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Only accept custom config if it matches the active project ID or has a verified key
-        if (!parsed?.apiKey || typeof parsed.apiKey !== 'string' || parsed.apiKey.length < 10 || parsed.projectId !== (baseFirebaseConfig as FirebaseConfigType).projectId) {
-          localStorage.removeItem('wc_custom_firebase_config');
-        } else if (parsed?.apiKey && parsed?.projectId) {
-          return { ...resolvedBase, ...parsed };
-        }
-      }
+      // Purge any stale localStorage config from previous sessions to prevent database ID mismatch
+      localStorage.removeItem('wc_custom_firebase_config');
     } catch {
       // ignore
     }
