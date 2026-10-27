@@ -169,7 +169,8 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   isHostRef.current = isHost;
 
   // Active question accessor with deterministic room-synchronized option/letter shuffling
-  const rawCurrentQ = room.currentQuestion || (room.questions && room.questions[room.currentRound - 1]);
+  const roundIdx = Math.max(0, (room.currentRound || 1) - 1);
+  const rawCurrentQ = (room.questions && room.questions[roundIdx]) || room.currentQuestion;
   const currentQ: Question | undefined = React.useMemo(() => {
     if (!rawCurrentQ) return undefined;
     const seed = `${room.id || 'room'}_${rawCurrentQ.id}_${room.currentRound}`;

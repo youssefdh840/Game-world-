@@ -430,6 +430,7 @@ export async function advanceToNextRoundOrFinish(
   const totalRounds = currentFallback.totalRounds || currentFallback.questions?.length || 5;
   const now = Date.now();
   const { refs, altRoomId } = getDualRoomDocRefs(roomId);
+  const nextQuestion = currentFallback.questions && nextRound <= totalRounds ? currentFallback.questions[nextRound - 1] : undefined;
 
   if (nextRound > totalRounds) {
     let winnerId: string | 'tie' = 'tie';
@@ -455,7 +456,6 @@ export async function advanceToNextRoundOrFinish(
       timestamp: now,
     });
   } else {
-    const nextQuestion = currentFallback.questions ? currentFallback.questions[nextRound - 1] : undefined;
     const advanceData: Partial<GameRoom> = {
       currentRound: nextRound,
       ...(nextQuestion ? { currentQuestion: nextQuestion } : {}),
@@ -504,6 +504,7 @@ export async function advanceToNextRoundOrFinish(
         refs.map((r) =>
           updateDoc(r, {
             currentRound: fsNextRound,
+            ...(nextQuestion ? { currentQuestion: nextQuestion } : {}),
             status: 'playing',
             hostAnswer: null,
             hostAnswerTime: null,

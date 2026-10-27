@@ -155,6 +155,7 @@ function buildFlagQuizQuestions(): Question[] {
       .slice(0, 3)
       .map((c) => c.name);
 
+    const capitalHint = country.capital && country.capital !== country.name ? ` (Hint: Its capital is ${country.capital})` : '';
     flagQuestions.push({
       id: `flag_quiz_${country.code.toLowerCase()}`,
       category: 'cultural_quiz',
@@ -163,10 +164,10 @@ function buildFlagQuizQuestions(): Question[] {
       difficulty: 'easy',
       subCategory: 'Flags',
       imageUrl: `https://flagcdn.com/w320/${country.code.toLowerCase()}.png`,
-      prompt: `Which country does this national flag belong to? (Hint: Its capital is ${country.capital})`,
+      prompt: `Which country does this national flag belong to?${capitalHint}`,
       options: [country.name, ...distractors],
       correctAnswer: country.name,
-      explanation: `This is the official national flag of ${country.name} (${country.flag}), located in ${country.continent} with its capital at ${country.capital}.`,
+      explanation: `This is the official national flag of ${country.name} (${country.flag})${country.capital && country.capital !== country.name ? `, whose capital is ${country.capital}` : ''}.`,
       active: true,
       source: 'curated',
     });
@@ -850,27 +851,38 @@ export async function fetchDynamicGameQuestions(
     }
   }
 
-  // If still below required count, recycle from seen pool (oldest seen)
-  if (chosen.length < count) {
-    const needed = count - chosen.length;
-    const shuffledSeen = shuffleArray(seenPool.filter((q) => !chosen.some((c) => c.id === q.id)));
-    chosen.push(...shuffledSeen.slice(0, needed));
+  // Strictly deduplicate chosen questions by ID, Prompt, and Country
+  const finalUnique: Question[] = [];
+  const seenIds = new Set<string>();
+  const seenPrompts = new Set<string>();
+
+  for (const q of chosen) {
+    if (finalUnique.length >= count) break;
+    const cleanPrompt = q.prompt.trim().toLowerCase();
+    if (!seenIds.has(q.id) && !seenPrompts.has(cleanPrompt)) {
+      seenIds.add(q.id);
+      seenPrompts.add(cleanPrompt);
+      finalUnique.push(q);
+    }
   }
 
-  // Final fallback: if somehow still under count, duplicate/fallback safely
-  if (chosen.length < count) {
-    const allShuffled = shuffleArray([...QUESTIONS, ...FLAG_QUIZ_QUESTIONS]);
-    for (const q of allShuffled) {
-      if (chosen.length >= count) break;
-      if (!chosen.some((c) => c.id === q.id)) {
-        chosen.push(q);
+  // If still below required count, draw strictly unique questions from master questions catalog
+  if (finalUnique.length < count) {
+    const masterPool = shuffleArray([...QUESTIONS, ...FLAG_QUIZ_QUESTIONS]);
+    for (const q of masterPool) {
+      if (finalUnique.length >= count) break;
+      const cleanPrompt = q.prompt.trim().toLowerCase();
+      if (!seenIds.has(q.id) && !seenPrompts.has(cleanPrompt)) {
+        seenIds.add(q.id);
+        seenPrompts.add(cleanPrompt);
+        finalUnique.push(q);
       }
     }
   }
 
   // Record chosen IDs into session cache so subsequent games in this session don't repeat them
-  recordQuestionsAnsweredInSession(chosen.map((q) => q.id));
+  recordQuestionsAnsweredInSession(finalUnique.map((q) => q.id));
 
   // Shuffle the order of chosen questions and randomize multiple-choice options for every question
-  return shuffleArray(chosen.slice(0, count)).map((q) => shuffleQuestionOptions(q));
+  return shuffleArray(finalUnique.slice(0, count)).map((q) => shuffleQuestionOptions(q));
 }

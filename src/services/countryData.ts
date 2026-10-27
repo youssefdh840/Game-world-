@@ -603,11 +603,47 @@ function isoToEmoji(code: string): string {
   return String.fromCodePoint(clean.charCodeAt(0) + offset, clean.charCodeAt(1) + offset);
 }
 
+export const WORLD_CAPITALS: Record<string, string> = {
+  AF: 'Kabul', AL: 'Tirana', DZ: 'Algiers', AD: 'Andorra la Vella', AO: 'Luanda',
+  AR: 'Buenos Aires', AM: 'Yerevan', AU: 'Canberra', AT: 'Vienna', AZ: 'Baku',
+  BS: 'Nassau', BH: 'Manama', BD: 'Dhaka', BY: 'Minsk', BE: 'Brussels',
+  BZ: 'Belmopan', BJ: 'Porto-Novo', BO: 'Sucre', BA: 'Sarajevo', BW: 'Gaborone',
+  BR: 'Brasília', BG: 'Sofia', BF: 'Ouagadougou', BI: 'Gitega', KH: 'Phnom Penh',
+  CM: 'Yaoundé', CA: 'Ottawa', CL: 'Santiago', CN: 'Beijing', CO: 'Bogotá',
+  CR: 'San José', HR: 'Zagreb', CU: 'Havana', CY: 'Nicosia', CZ: 'Prague',
+  DK: 'Copenhagen', DJ: 'Djibouti', DO: 'Santo Domingo', EC: 'Quito', EG: 'Cairo',
+  SV: 'San Salvador', EE: 'Tallinn', ET: 'Addis Ababa', FI: 'Helsinki', FR: 'Paris',
+  GE: 'Tbilisi', DE: 'Berlin', GH: 'Accra', GR: 'Athens', GT: 'Guatemala City',
+  HN: 'Tegucigalpa', HU: 'Budapest', IS: 'Reykjavik', IN: 'New Delhi', ID: 'Jakarta',
+  IR: 'Tehran', IQ: 'Baghdad', IE: 'Dublin', IL: 'Jerusalem', IT: 'Rome',
+  JM: 'Kingston', JP: 'Tokyo', JO: 'Amman', KZ: 'Astana', KE: 'Nairobi',
+  KW: 'Kuwait City', KG: 'Bishkek', LA: 'Vientiane', LV: 'Riga', LB: 'Beirut',
+  LY: 'Tripoli', LT: 'Vilnius', LU: 'Luxembourg', MY: 'Kuala Lumpur', MV: 'Malé',
+  ML: 'Bamako', MT: 'Valletta', MR: 'Nouakchott', MU: 'Port Louis', MX: 'Mexico City',
+  MD: 'Chisinau', MC: 'Monaco', MN: 'Ulaanbaatar', ME: 'Podgorica', MA: 'Rabat',
+  MZ: 'Maputo', NA: 'Windhoek', NP: 'Kathmandu', NL: 'Amsterdam', NZ: 'Wellington',
+  NI: 'Managua', NE: 'Niamey', NG: 'Abuja', KP: 'Pyongyang', MK: 'Skopje',
+  NO: 'Oslo', OM: 'Muscat', PK: 'Islamabad', PA: 'Panama City', PY: 'Asunción',
+  PE: 'Lima', PH: 'Manila', PL: 'Warsaw', PT: 'Lisbon', QA: 'Doha',
+  RO: 'Bucharest', RU: 'Moscow', RW: 'Kigali', SA: 'Riyadh', SN: 'Dakar',
+  RS: 'Belgrade', SG: 'Singapore', SK: 'Bratislava', SI: 'Ljubljana', SO: 'Mogadishu',
+  ZA: 'Pretoria', KR: 'Seoul', ES: 'Madrid', LK: 'Colombo', SD: 'Khartoum',
+  SE: 'Stockholm', CH: 'Bern', SY: 'Damascus', TW: 'Taipei', TJ: 'Dushanbe',
+  TZ: 'Dodoma', TH: 'Bangkok', TN: 'Tunis', TR: 'Ankara', UG: 'Kampala',
+  UA: 'Kyiv', AE: 'Abu Dhabi', GB: 'London', US: 'Washington, D.C.', UY: 'Montevideo',
+  UZ: 'Tashkent', VE: 'Caracas', VN: 'Hanoi', YE: 'Sana\'a', ZM: 'Lusaka', ZW: 'Harare'
+};
+
 export function getCountryByCode(code: string): CountryData | undefined {
   if (!code) return undefined;
   const upper = code.trim().toUpperCase();
   const existing = COUNTRIES_MAP.get(upper);
-  if (existing) return existing;
+  if (existing) {
+    if (WORLD_CAPITALS[upper] && (!existing.capital || existing.capital === existing.name)) {
+      return { ...existing, capital: WORLD_CAPITALS[upper] };
+    }
+    return existing;
+  }
 
   if (/^[A-Z]{2}$/.test(upper)) {
     let resolvedName = upper;
@@ -619,13 +655,24 @@ export function getCountryByCode(code: string): CountryData | undefined {
         resolvedName = upper;
       }
     }
+    const genuineCapital = WORLD_CAPITALS[upper] || '';
+    const asianCodes = new Set(['LB', 'SY', 'JO', 'IQ', 'PS', 'YE', 'OM', 'KW', 'BH', 'QA', 'JP', 'KR', 'CN', 'IN', 'VN', 'TH', 'ID', 'MY', 'PH', 'SG', 'SA', 'AE']);
+    const africanCodes = new Set(['TN', 'DZ', 'MA', 'EG', 'LY', 'SD', 'SN', 'NG', 'KE', 'ZA', 'GH', 'ET', 'CI', 'CM', 'UG', 'TZ']);
+    const americanCodes = new Set(['US', 'CA', 'MX', 'BR', 'AR', 'CO', 'PE', 'CL', 'EC', 'VE', 'CU', 'DO', 'CR', 'PA', 'UY']);
+    const oceanianCodes = new Set(['AU', 'NZ', 'FJ', 'PG']);
+    const continent: 'Africa' | 'Americas' | 'Asia' | 'Europe' | 'Oceania' =
+      africanCodes.has(upper) ? 'Africa' :
+      asianCodes.has(upper) ? 'Asia' :
+      americanCodes.has(upper) ? 'Americas' :
+      oceanianCodes.has(upper) ? 'Oceania' : 'Europe';
+
     return {
       code: upper,
       name: resolvedName,
       flag: isoToEmoji(upper),
-      capital: resolvedName,
-      continent: 'Europe',
-      languages: ['Local & International Languages'],
+      capital: genuineCapital,
+      continent,
+      languages: ['Local Languages'],
       traditionalFoods: ['Traditional National Dish'],
       landmarks: ['Historic Cultural Landmark'],
       facts: [`${resolvedName} is a vibrant nation with rich cultural traditions and heritage.`],
