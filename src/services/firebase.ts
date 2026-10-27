@@ -33,20 +33,20 @@ export interface FirebaseConfigType {
 export function getActiveFirebaseConfig(): FirebaseConfigType {
   // Always resolve from the provisioned firebase-applet-config.json
   const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : ({} as Record<string, string>);
+  const cfg = baseFirebaseConfig as FirebaseConfigType;
   const resolvedBase: FirebaseConfigType = {
-    apiKey: (env.VITE_FIREBASE_API_KEY as string) || (baseFirebaseConfig as FirebaseConfigType).apiKey || '',
-    authDomain: (env.VITE_FIREBASE_AUTH_DOMAIN as string) || (baseFirebaseConfig as FirebaseConfigType).authDomain || '',
-    projectId: (env.VITE_FIREBASE_PROJECT_ID as string) || (baseFirebaseConfig as FirebaseConfigType).projectId || '',
-    storageBucket: (env.VITE_FIREBASE_STORAGE_BUCKET as string) || (baseFirebaseConfig as FirebaseConfigType).storageBucket || '',
-    messagingSenderId: (env.VITE_FIREBASE_MESSAGING_SENDER_ID as string) || (baseFirebaseConfig as FirebaseConfigType).messagingSenderId || '',
-    appId: (env.VITE_FIREBASE_APP_ID as string) || (baseFirebaseConfig as FirebaseConfigType).appId || '',
-    measurementId: (env.VITE_FIREBASE_MEASUREMENT_ID as string) || (baseFirebaseConfig as FirebaseConfigType).measurementId || '',
-    firestoreDatabaseId: (baseFirebaseConfig as FirebaseConfigType).firestoreDatabaseId || (env.VITE_FIREBASE_DATABASE_ID as string) || 'ai-studio-cd115816-5598-40d6-958c-c0b43f87c22e',
+    apiKey: cfg.apiKey || (env.VITE_FIREBASE_API_KEY as string) || '',
+    authDomain: cfg.authDomain || (env.VITE_FIREBASE_AUTH_DOMAIN as string) || '',
+    projectId: cfg.projectId || (env.VITE_FIREBASE_PROJECT_ID as string) || '',
+    storageBucket: cfg.storageBucket || (env.VITE_FIREBASE_STORAGE_BUCKET as string) || '',
+    messagingSenderId: cfg.messagingSenderId || (env.VITE_FIREBASE_MESSAGING_SENDER_ID as string) || '',
+    appId: cfg.appId || (env.VITE_FIREBASE_APP_ID as string) || '',
+    measurementId: cfg.measurementId || (env.VITE_FIREBASE_MEASUREMENT_ID as string) || '',
+    firestoreDatabaseId: cfg.firestoreDatabaseId || (env.VITE_FIREBASE_DATABASE_ID as string) || '(default)',
   };
 
   if (typeof window !== 'undefined') {
     try {
-      // Purge any stale localStorage config from previous sessions to prevent database ID mismatch
       localStorage.removeItem('wc_custom_firebase_config');
     } catch {
       // ignore
@@ -74,6 +74,13 @@ const app = getApps().length === 0 ? initializeApp(activeConfig) : getApps()[0];
 
 export const db = getFirestore(app, activeConfig.firestoreDatabaseId || '(default)');
 export const auth = getAuth(app);
+
+// Proactively initiate anonymous authentication in background
+if (typeof window !== 'undefined') {
+  import('firebase/auth').then(({ signInAnonymously }) => {
+    signInAnonymously(auth).catch(() => {});
+  });
+}
 
 export enum OperationType {
   CREATE = 'create',
