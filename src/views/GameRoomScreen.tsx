@@ -237,17 +237,18 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
         }
 
         const merged = { ...updated };
-        // Prevent lagging snapshot from wiping out local player's newly submitted answer for the current round
+        // Within the same round: preserve both players' answers and scores so neither player's results are erased by lagging snapshots
         if (prev.currentRound === updated.currentRound) {
-          if (liveIsHost && prev.hostAnswer && !updated.hostAnswer) {
+          if (prev.hostAnswer && !updated.hostAnswer) {
             merged.hostAnswer = prev.hostAnswer;
             merged.hostAnswerTime = prev.hostAnswerTime;
-            merged.hostScore = prev.hostScore;
-          } else if (!liveIsHost && prev.guestAnswer && !updated.guestAnswer) {
+          }
+          if (prev.guestAnswer && !updated.guestAnswer) {
             merged.guestAnswer = prev.guestAnswer;
             merged.guestAnswerTime = prev.guestAnswerTime;
-            merged.guestScore = prev.guestScore;
           }
+          merged.hostScore = Math.max(prev.hostScore || 0, updated.hostScore || 0);
+          merged.guestScore = Math.max(prev.guestScore || 0, updated.guestScore || 0);
         }
         return merged;
       });

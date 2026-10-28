@@ -348,11 +348,15 @@ export function subscribeToFallbackRoom(
   const current = getFallbackRoom(roomId);
   if (current) onUpdate(current);
 
-  // Active polling fallback for stale tab catches
+  // Controlled fallback check only when an actual update has occurred
+  let lastUpdatedAt = current?.updatedAt || '';
   const pollTimer = setInterval(() => {
     const fresh = getFallbackRoom(roomId);
-    if (fresh) onUpdate(fresh);
-  }, 450);
+    if (fresh?.updatedAt && fresh.updatedAt > lastUpdatedAt) {
+      lastUpdatedAt = fresh.updatedAt;
+      onUpdate(fresh);
+    }
+  }, 1000);
 
   return () => {
     clearInterval(pollTimer);

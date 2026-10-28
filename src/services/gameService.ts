@@ -1,6 +1,7 @@
 import {
   doc,
   getDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   onSnapshot,
@@ -166,7 +167,6 @@ export function subscribeToGameRoom(
 
   // 1. Subscribe to fallback (in-memory + localStorage + WebRTC)
   const unsubFallback1 = subscribeToFallbackRoom(roomId, onUpdate);
-  const unsubFallback2 = altRoomId ? subscribeToFallbackRoom(altRoomId, onUpdate) : () => {};
 
   // 2. Subscribe to Firestore in real-time on primary and alt ID
   let unsubFirestore1 = () => {};
@@ -230,7 +230,6 @@ export function subscribeToGameRoom(
     isDone = true;
     clearInterval(pollInterval);
     unsubFallback1();
-    unsubFallback2();
     unsubFirestore1();
     unsubFirestore2();
   };
@@ -280,7 +279,11 @@ export async function syncMemoryMatchScore(
   if (altRoomId) updateFallbackRoom(altRoomId, updates as Partial<GameRoom>);
   try {
     const cleanUpdates = sanitizeUpdates(updates);
-    await Promise.all(refs.map((r) => updateDoc(r, cleanUpdates).catch(() => {})));
+    await Promise.all(
+      refs.map((r) =>
+        setDoc(r, cleanUpdates, { merge: true }).catch(() => updateDoc(r, cleanUpdates).catch(() => {}))
+      )
+    );
   } catch (error) {
     console.warn('syncMemoryMatchScore notice:', error);
   }
@@ -359,15 +362,11 @@ export async function submitPlayerAnswer(
   if (isHost) {
     fallbackUpdates.hostAnswer = answer ?? '';
     fallbackUpdates.hostAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
-    if (pointsEarned > 0) {
-      fallbackUpdates.hostScore = newHostScore;
-    }
+    fallbackUpdates.hostScore = newHostScore;
   } else {
     fallbackUpdates.guestAnswer = answer ?? '';
     fallbackUpdates.guestAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
-    if (pointsEarned > 0) {
-      fallbackUpdates.guestScore = newGuestScore;
-    }
+    fallbackUpdates.guestScore = newGuestScore;
   }
   const { refs, altRoomId } = getDualRoomDocRefs(roomId);
   updateFallbackRoom(roomId, fallbackUpdates);
@@ -385,34 +384,29 @@ export async function submitPlayerAnswer(
     questionIndex: room.currentRound,
   });
 
-  // 2. Persist to Firestore: Write absolute scores directly to both documents
+  // 2. Persist to Firestore: Write absolute scores and answers directly to both documents
   const updates: Record<string, unknown> = {
     updatedAt: new Date().toISOString(),
   };
   if (isHost) {
     updates.hostAnswer = answer ?? '';
     updates.hostAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
-    if (pointsEarned > 0) {
-      updates.hostScore = newHostScore;
-    }
+    updates.hostScore = newHostScore;
   } else {
     updates.guestAnswer = answer ?? '';
     updates.guestAnswerTime = typeof timeTakenMs === 'number' ? timeTakenMs : roundDurationMs;
-    if (pointsEarned > 0) {
-      updates.guestScore = newGuestScore;
-    }
+    updates.guestScore = newGuestScore;
   }
 
   try {
     const cleanUpdates = sanitizeUpdates(updates);
-    await Promise.all(refs.map((r) => updateDoc(r, cleanUpdates)));
+    await Promise.all(
+      refs.map((r) =>
+        setDoc(r, cleanUpdates, { merge: true }).catch(() => updateDoc(r, cleanUpdates).catch(() => {}))
+      )
+    );
   } catch (error) {
     console.warn(`Could not update player answer in Firestore (${roomId}):`, error);
-    try {
-      await Promise.all(refs.map((r) => updateDoc(r, updates).catch(() => {})));
-    } catch (retryErr) {
-      console.error(`Retry update player answer also failed (${roomId}):`, retryErr);
-    }
   }
 }
 
@@ -492,28 +486,36 @@ export async function advanceToNextRoundOrFinish(
 
       await Promise.all(
         refs.map((r) =>
-          updateDoc(r, {
-            status: 'finished',
-            winnerId,
-            updatedAt: new Date().toISOString(),
-          }).catch(() => {})
+          setDoc(
+            r,
+            {
+              status: 'finished',
+              winnerId,
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          ).catch(() => {})
         )
       );
     } else {
       await Promise.all(
         refs.map((r) =>
-          updateDoc(r, {
-            currentRound: fsNextRound,
-            ...(nextQuestion ? { currentQuestion: nextQuestion } : {}),
-            status: 'playing',
-            hostAnswer: null,
-            hostAnswerTime: null,
-            guestAnswer: null,
-            guestAnswerTime: null,
-            roundStartedAt: now,
-            roundStartTime: now,
-            updatedAt: new Date().toISOString(),
-          }).catch(() => {})
+          setDoc(
+            r,
+            {
+              currentRound: fsNextRound,
+              ...(nextQuestion ? { currentQuestion: nextQuestion } : {}),
+              status: 'playing',
+              hostAnswer: null,
+              hostAnswerTime: null,
+              guestAnswer: null,
+              guestAnswerTime: null,
+              roundStartedAt: now,
+              roundStartTime: now,
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          ).catch(() => {})
         )
       );
     }

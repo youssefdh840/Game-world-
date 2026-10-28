@@ -137,6 +137,19 @@ Comprehensive security review and multi-layer hardening across Firestore securit
   1. Configured `setPersistence(auth, browserLocalPersistence)` in both `src/services/firebase.ts` and before popup sign-in in `src/context/AuthContext.tsx`.
   2. Removed all eager, top-level `signInAnonymously(auth)` invocations from `firebase.ts` and `matchmakingService.ts`.
   3. In `matchmakingService.ts`, updated `ensureFirebaseAuth()` to await `auth.authStateReady()` before checking `auth.currentUser`, ensuring existing Google/Email authenticated sessions are recognized and never overwritten with anonymous credentials.
-  4. In `AuthContext.tsx`, removed the automatic fallback to anonymous sign-in in `onAuthStateChanged(auth, ...)` and saved the active login provider (`google.com`) in `localStorage` alongside the user profile cache so that session state is preserved across page refreshes and browser restarts.
+---
+
+### 8. Host & Guest Live Score and Answer Synchronization Fix
+
+- **Problem Addressed**:
+  - Across all 4 game modes, chat and matchmaking worked, but the opponent's answers and points did not appear on the other player's screen, making it look as though the opponent never answered or never chose an option, and forcing rounds to wait 50 seconds to timeout.
+- **Root Causes Identified**:
+  1. `subscribeToFallbackRoom` in `src/services/multiplayerFallback.ts` had an active `setInterval` polling every 450ms that unconditionally called `onUpdate(fresh)` with the local device's memory/localStorage copy. On real mobile devices playing over the internet, this local copy had stale, un-answered opponent state, continuously resetting the opponent's answers and score back to `null` and `0` twice every second.
+  2. In `GameRoomScreen.tsx`, the room snapshot merge logic only preserved the local player's answer within the round (host preserved `hostAnswer`, guest preserved `guestAnswer`). Whenever a lagging snapshot arrived without the opponent's newly submitted answer, the opponent's answer was wiped out back to `null`.
+  3. In `src/services/gameService.ts`, `submitPlayerAnswer` used `updateDoc` across dual document references (`refs`), which failed with `No document to update` on non-existent `room_code_` IDs, causing `Promise.all` to reject. Additionally, `hostScore` and `guestScore` were omitted from updates when points earned was 0.
+- **Resolutions Applied**:
+  1. Updated `GameRoomScreen.tsx` snapshot merge so that within an active round, both `hostAnswer` and `guestAnswer` are preserved against lagging packets, and accumulated scores are preserved monotonically via `Math.max`.
+  2. Fixed `subscribeToFallbackRoom` to only emit updates when `updatedAt` has actually progressed, eliminating the continuous 450ms state erasure.
+  3. Replaced fragile `updateDoc` calls with `setDoc(r, cleanUpdates, { merge: true })` across dual document references with individual error guards so writes never fail if an alternate ID doesn't exist yet, and ensured scores are always synchronized in all round submissions.
 
 
