@@ -102,6 +102,15 @@ let authInitPromise: Promise<string> | null = null;
  * Automatically ensures Firebase Auth has a valid session (falling back to signInAnonymously for guest players).
  */
 export async function ensureFirebaseAuth(): Promise<string> {
+  // First ensure initial auth state from IndexedDB/localStorage (e.g. Google login) is resolved
+  if (typeof auth.authStateReady === 'function') {
+    try {
+      await auth.authStateReady();
+    } catch {
+      // ignore
+    }
+  }
+
   const current = auth.currentUser;
   if (current) {
     return current.uid;
@@ -128,11 +137,6 @@ export async function ensureFirebaseAuth(): Promise<string> {
     }
   })();
   return authInitPromise;
-}
-
-// Proactively initiate anonymous authentication in background
-if (typeof window !== 'undefined') {
-  ensureFirebaseAuth().catch(() => {});
 }
 
 /**

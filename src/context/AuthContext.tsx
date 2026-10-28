@@ -9,6 +9,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
+  setPersistence,
+  browserLocalPersistence,
 } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { UserProfile } from '../types/game';
@@ -230,11 +232,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let unsubProfile: (() => void) | null = null;
     let isMounted = true;
 
+    // Await auth state readiness if supported
+    if (typeof auth.authStateReady === 'function') {
+      auth.authStateReady().then(() => {
+        if (isMounted) setLoading(false);
+      }).catch(() => {
+        if (isMounted) setLoading(false);
+      });
+    }
+
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
       if (!isMounted) return;
       setFirebaseUser(user);
+      setLoading(false);
 
       if (user) {
+        // Remember provider if non-anonymous user (Google or Email)
+        if (!user.isAnonymous) {
+          try {
+            const providerId = user.providerData?.[0]?.providerId || 'google.com';
+            localStorage.setItem('wc_logged_in_provider', providerId);
+          } catch {
+            // ignore
+          }
+        }
+
         // Fetch or subscribe to user profile
         try {
           const [profile, detectedGeo] = await Promise.all([
@@ -334,10 +356,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error('Error fetching user profile:', err);
         }
       } else {
-        // Automatically attempt sign in as anonymous guest if not signed in, safely ignore if rejected
-        signInAnonymously(auth).catch((err) => {
-          console.warn('Anonymous sign-in deferred:', err);
-        });
+        // When user is null, do NOT trigger eager anonymous sign in.
+        // This prevents overwriting the stored Google credentials during session restoration.
       }
     });
 
@@ -350,10 +370,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithGoogle = async () => {
     try {
+      setLoading(true);
+      await setPersistence(auth, browserLocalPersistence);
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const cred = await signInWithPopup(auth, provider);
+      if (cred?.user) {
+        try {
+          localStorage.setItem('wc_logged_in_provider', 'google.com');
+        } catch {
+          // ignore
+        }
+      }
     } catch (err) {
       throw formatAuthError(err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -465,10 +497,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     try {
       localStorage.removeItem('wc_cached_profile');
+      localStorage.removeItem('wc_logged_in_provider');
     } catch {
       // ignore
     }
     await signOut(auth);
+    setFirebaseUser(null);
     setUserProfile(createFallbackProfile());
   };
 

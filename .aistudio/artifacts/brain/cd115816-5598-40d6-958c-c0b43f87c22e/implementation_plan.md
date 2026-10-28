@@ -122,10 +122,21 @@ Comprehensive security review and multi-layer hardening across Firestore securit
     1. Redundant nested `currentQuestion` containing `undefined` properties passed to `updateDoc`, causing Firestore updates to silently reject.
     2. Overzealous `clearTimeout(roundTransitionTimeoutRef.current)` in the timer effect cleanup which cancelled the 1-second advance timeout upon state re-render.
     3. Host-only advance restriction that prevented the guest from committing the round increment if host lagged.
+---
+
+### 7. Google Authentication Session Persistence Fix
+
+- **Problem Addressed**:
+  - When users logged in using their Google account, closing or refreshing the site caused them to be automatically logged out or demoted to an anonymous guest account upon returning.
+- **Root Causes Identified**:
+  1. `src/services/firebase.ts` executed an unconditional eager `signInAnonymously(auth)` at top-level module import. When the user reopened the site, this eager call ran before Firebase Auth could restore the Google user credential from `IndexedDB`, overwriting the Google session with a new anonymous guest.
+  2. `src/services/matchmakingService.ts` also executed `ensureFirebaseAuth().catch(() => {})` at top-level module import and in `ensureFirebaseAuth()` called `signInAnonymously(auth)` immediately when `auth.currentUser` was `null`, without awaiting `auth.authStateReady()`.
+  3. `src/context/AuthContext.tsx` had an `else` branch in `onAuthStateChanged` that eagerly attempted anonymous sign-in whenever `user` was temporarily `null`.
+  4. Explicit `browserLocalPersistence` from `firebase/auth` was not configured before `signInWithPopup`.
 - **Resolutions Applied**:
-  - Rewrote `advanceToNextRoundOrFinish` in `gameService.ts` with clean primitive parameters, eliminating nested `undefined` rejections and adding atomic `currentRound >= nextRound` idempotency checks.
-  - Protected `roundTransitionTimeoutRef.current` from being cancelled by timer re-renders so the 1-second transition runs reliably.
-  - Allowed whichever device triggers the advance to update Firestore immediately.
-  - Protected room listener from lagging snapshots pulling clients back into earlier rounds.
+  1. Configured `setPersistence(auth, browserLocalPersistence)` in both `src/services/firebase.ts` and before popup sign-in in `src/context/AuthContext.tsx`.
+  2. Removed all eager, top-level `signInAnonymously(auth)` invocations from `firebase.ts` and `matchmakingService.ts`.
+  3. In `matchmakingService.ts`, updated `ensureFirebaseAuth()` to await `auth.authStateReady()` before checking `auth.currentUser`, ensuring existing Google/Email authenticated sessions are recognized and never overwritten with anonymous credentials.
+  4. In `AuthContext.tsx`, removed the automatic fallback to anonymous sign-in in `onAuthStateChanged(auth, ...)` and saved the active login provider (`google.com`) in `localStorage` alongside the user profile cache so that session state is preserved across page refreshes and browser restarts.
 
 

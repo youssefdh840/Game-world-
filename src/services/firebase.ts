@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import {
   initializeFirestore,
   getFirestore,
@@ -75,10 +75,10 @@ const app = getApps().length === 0 ? initializeApp(activeConfig) : getApps()[0];
 export const db = getFirestore(app, activeConfig.firestoreDatabaseId || '(default)');
 export const auth = getAuth(app);
 
-// Proactively initiate anonymous authentication in background
+// Explicitly configure local persistence so Google and email sessions survive browser reboots and reloads
 if (typeof window !== 'undefined') {
-  import('firebase/auth').then(({ signInAnonymously }) => {
-    signInAnonymously(auth).catch(() => {});
+  setPersistence(auth, browserLocalPersistence).catch((err) => {
+    console.warn('Firebase setPersistence notice:', err);
   });
 }
 
