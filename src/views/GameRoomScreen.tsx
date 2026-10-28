@@ -1631,28 +1631,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
               style={{ width: `${(timeLeft / roundDurationSeconds) * 100}%` }}
             />
           </div>
-
-          {/* Dual Live Realtime Progress & Score Sync Bar */}
-          <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-800/80 text-[10px] sm:text-xs">
-            <div className="flex items-center justify-between bg-slate-900/60 px-2 py-1 rounded-lg border border-cyan-500/20">
-              <span className="text-cyan-400 font-bold flex items-center gap-1 truncate">
-                <span className={`w-1.5 h-1.5 rounded-full ${hasAnswered ? 'bg-cyan-400' : 'bg-cyan-400/50 animate-pulse'}`} />
-                <span>
-                  You: {hasAnswered ? (showExplanation ? (selectedAnswer === currentQ?.correctAnswer ? '✅ Correct' : '❌ Wrong') : '⚡ Answered') : 'Thinking...'}
-                </span>
-              </span>
-              <span className="font-mono text-cyan-300 font-black ml-1 shrink-0">{myScore} pts</span>
-            </div>
-            <div className="flex items-center justify-between bg-slate-900/60 px-2 py-1 rounded-lg border border-rose-500/20">
-              <span className={`font-bold flex items-center gap-1 truncate ${opponentHasAnswered ? 'text-rose-400' : 'text-slate-400'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${opponentHasAnswered ? 'bg-rose-400 animate-ping' : 'bg-slate-500'}`} />
-                <span>
-                  {opponentName}: {opponentHasAnswered ? (showExplanation || (hasAnswered && opponentHasAnswered) ? (opponentIsCorrect ? '✅ Correct' : '❌ Wrong') : '⚡ Answered') : 'Thinking...'}
-                </span>
-              </span>
-              <span className="font-mono text-rose-300 font-black ml-1 shrink-0">{opponentScore} pts</span>
-            </div>
-          </div>
         </div>
       </div>
 

@@ -1,35 +1,191 @@
-# World Challenge 🌍✈️🎮
+# تحدي العالم | World Challenge 🌍✈️🎮
 
-World Challenge is a modern mobile-first social multiplayer game where players meet opponents from around the world and compete in cultural mini-games together.
+> **لعبة تحدي ثقافية اجتماعية في الوقت الفعلي متعددة اللاعبين (Real-Time Multiplayer Cultural Game)**
+> التقي بلاعبين من جميع أنحاء العالم، تنافس في ألعاب ثقافية مشوقة، واجمع أختام جواز سفرك الافتراضي!
 
-## Concept: PLAY + MEET PEOPLE + DISCOVER THE WORLD
-- 🤝 **Meet people globally**: Match with players from over 25+ rich country datasets (Tunisia 🇹🇳, Japan 🇯🇵, France 🇫🇷, Brazil 🇧🇷, South Korea 🇰🇷, Egypt 🇪🇬, and more).
-- 🎮 **7 Unique Cultural Mini-Games**:
-  1. **Country Quiz**: Guess flags, capitals, monuments, and unusual facts.
-  2. **Guess the Word**: Authentic expressions (e.g. *Barsha* in Tunisian Arabic, *Saudade* in Portuguese, *Komorebi* in Japanese, *Cwtch* in Welsh).
-  3. **Mystery Food**: Iconic recipes (Couscous, Ramen, Feijoada, Tacos al Pastor, Paella, etc.).
-  4. **Music & Instruments**: Cultural instruments (Oud, Sitar, Steelpan, Taiko, Mariachi) with Web Audio sound synthesis.
-  5. **World Map**: Interactive geographic pinpointing.
-  6. **Cultural Mime & Traditions**: Festivals, dances, and rituals (Haka, Hanami, La Tomatina, Día de los Muertos, Holi).
-  7. **1 vs 1 Speed Duel**: Buzzer battle where fast correct answers score bonus points.
-- 🛂 **Virtual Passport Progression**: Every time you complete a match with a player from a new country, that country is stamped into your passport booklet.
-- 🏆 **Progression & Social**:
-  - Level system & XP progression bar.
-  - Global, Weekly, and By-Country Leaderboards.
-  - Achievement Badges (*First Journey*, *World Traveler*, *Global Explorer*, *Champion*, *Speed Demon*, etc.).
-  - Daily Cultural Challenge with streak tracking and coin rewards.
-  - Real-time in-game chat with emoji reactions.
-  - Safety moderation: Player reporting, mute controls, profanity filter.
-  - Role-based Admin Dashboard for questions, country catalogs, and moderation reports.
+---
 
-## Tech Stack
-- **Frontend**: React 19, TypeScript, Tailwind CSS, Lucide Icons, Canvas Confetti.
-- **Backend / Database**: Google Cloud Firestore with real-time listeners and transactions.
-- **Authentication**: Firebase Authentication (Google popup, Email/Password, and Instant Guest Play with country picker).
-- **Security**: Hardened Zero-Trust Firestore Security Rules (`firestore.rules`) with path guards, PII isolation, and role authorization.
-- **Audio**: Web Audio API sound generator (chimes, pops, buzzer, countdown, stamp thud, victory fanfares).
+## 📑 جدول المحتويات / Table of Contents
+- [نظرة عامة (Overview)](#-نظرة-عامة-overview)
+- [المميزات الرئيسية (Key Features)](#-المميزات-الرئيسية-key-features)
+- [أنماط وألعاب التحدي الثقافي (Game Modes)](#-أنماط-وألعاب-التحدي-الثقافي-game-modes)
+- [نظام جواز السفر والأوسمة (Virtual Passport & Badges)](#-نظام-جواز-السفر-والأوسمة-virtual-passport--badges)
+- [المزامنة اللحظية والشبكة (Realtime Sync & Networking)](#-المزامنة-اللحظية-والشبكة-realtime-sync--networking)
+- [التقنيات المستخدمة (Tech Stack)](#-التقنيات-المستخدمة-tech-stack)
+- [هيكلية المشروع (Project Structure)](#-هيكلية-المشروع-project-structure)
+- [التشغيل والتثبيت محلياً (Setup & Installation)](#-التشغيل-والتثبيت-محليا-setup--installation)
+- [قواعد الأمان والبيانات (Security & Firestore)](#-قواعد-الأمان-والبيانات-security--firestore)
 
-## Setup & Running
-1. `npm install`
-2. `npm run dev` (starts on port 3000)
-3. Build for production: `npm run build`
+---
+
+## 🌟 نظرة عامة (Overview)
+
+**World Challenge** هي لعبة ويب تفاعلية للهواتف المحمولة والحواسيب تجمع بين التنافسية الثقافية والتعارف العالمي:
+- **العب (Play):** تنافس رأساً برأس (1 ضد 1) أو في غرف خاصة مع أصدقائك عبر رمز الغرفة (Room Code).
+- **تعرّف (Connect):** التقي بأشخاص من أكثر من 25 دولة مختلفة (تونس 🇹🇳، اليابان 🇯🇵، فرنسا 🇫🇷، البرازيل 🇧🇷، مصر 🇪🇬، كوريا الجنوبية 🇰🇷، والمزيد).
+- **استكشف (Explore):** اكتشف تقاليد، كلمات ولهجات محلية، مأكولات تقليدية، وآلات موسيقية لكل ثقافة.
+
+---
+
+## ✨ المميزات الرئيسية (Key Features)
+
+1. **المزامنة واللعب التنافسي المباشر (Real-Time Multiplayer):**
+   - إنشاء غرف لعب برمز مكوّن من 6 خانات (مثل `GAXF6L`).
+   - نظام مطابقة عشوائي سريع (Quick Matchmaking) للبحث عن خصم متاح.
+   - مزامنة فورية للنتائج، الإجابات، وحالة التقدم لحظة بلحظة.
+   - احتساب فوري للسرعة والمكافآت (Streak Bonuses) عند الإجابة الصحيحة.
+
+2. **تسجيل الدخول وحفظ الجلسات (Authentication & Persistence):**
+   - تسجيل الدخول بحساب **Google** بنقرة واحدة، مع حفظ الجلسة محلياً (`browserLocalPersistence`) لضمان بقاء المستخدم متصلاً حتى بعد إغلاق المتصفح.
+   - اللعب الفوري كضيف (**Guest Play**) مع اختيار الدولة والاسم الرمزي.
+   - تسجيل الدخول بالبريد الإلكتروني وكلمة المرور.
+
+3. **الدردشة التفاعلية والمشاعر (In-Game Chat & Reactions):**
+   - شات مباشر داخل الغرفة مع تفاعلات وإيموجي تعبيرية سريعة.
+   - فلتر أمان مدمج مع إمكانية الإبلاغ وكتم الصوت للمحافظة على بيئة لعب إيجابية.
+
+4. **المؤثرات الصوتية والاحتفالية (Sound & Audio FX):**
+   - مؤثرات صوتية تفاعلية مدمجة باستخدام **Web Audio API** (نقرات، إجابة صحيحة، إجابة خاطئة، صوت الختم، موسيقى الفوز).
+   - تأثيرات القصاصات الملونة (Confetti) عند الفوز والإنجازات.
+
+5. **لوحة الصدارة والمهام اليومية (Leaderboards & Daily Quests):**
+   - لوحة صدارة عالمية، أسبوعية، وحسب الدولة.
+   - تحديات يومية بنقاط ومكافآت لمضاعفة نقاط الخبرة (XP).
+
+---
+
+## 🎮 أنماط وألعاب التحدي الثقافي (Game Modes)
+
+تتضمن اللعبة **7 ألعاب ثقافية مصغرة** متنوعة الأسئلة ومحدثة بدون تكرار:
+
+| اللعبة | الوصف |
+| :--- | :--- |
+| 🚩 **Country Quiz** | التعرف على أعلام الدول، العواصم، المعالم التاريخية، والمعلومات الثقافية غير المألوفة. |
+| 💬 **Guess the Word** | تخمين معاني المصطلحات الشعبية واللهجات المحلية (مثل: *برشة* في تونس، *Saudade* في البرتغال، *Komorebi* في اليابان). |
+| 🍲 **Mystery Food** | التعرف على الأكلات والأطباق الشعبية ومكوناتها (كسكسي، رامين، فاهيتا، بايا، تاكوس، وغيرها). |
+| 🎵 **Music & Instruments** | استكشاف الآلات الموسيقية التراثية (العود، السيتار، التايكو، المارياشي) مع تجارب صوتية فريدة. |
+| 🗺️ **World Map** | تحديد المواقع الجغرافية واختبار المعرفة بالخرائط والقارات. |
+| 🎭 **Cultural Traditions** | ألغاز حول الاحتفالات، الرقصات، والتقاليد العالمية (الهاكا، الهانامي، الهولي، يوم الموتى). |
+| ⚡ **1 vs 1 Speed Duel** | مواجهة نارية مباشرة تعتمد على سرعة الضغط واختيار الإجابة الصحيحة قبل الخصم لنيل نقاط إضافية. |
+
+---
+
+## 🛂 نظام جواز السفر والأوسمة (Virtual Passport & Badges)
+
+- **جواز السفر الافتراضي (Digital Passport Booklet):** في كل مرة تلعب فيها ضد منافس من دولة جديدة، يُطبع ختم تلك الدولة رسمياً في جواز سفرك مع تاريخ المواجهة.
+- **مستويات الخبرة (XP & Levels):** كل جولة تكسبك نقاط خبرة لترقية مستواك من *مسافر مبتدئ* إلى *مستكشف عالمي*.
+- **الأوسمة والإنجازات (Badges):**
+  - 🏅 *First Journey* (أول رحلة ومباراة مكتملة)
+  - 🗺️ *World Traveler* (مواجهة 5 دول مختلفة)
+  - 👑 *Global Master* (الفوز في 10 مباريات متتالية)
+  - ⚡ *Lightning Reflexes* (الإجابة في أقل من ثانيتين)
+
+---
+
+## ⚡ المزامنة اللحظية والشبكة (Realtime Sync & Networking)
+
+تعتمد اللعبة على معمارية شبكية مزدوجة وموثوقة لضمان استمرار اللعب بدون انقطاع:
+1. **قاعدة بيانات Firestore المباشرة (Primary Cloud Sync):**
+   - الاستماع الفوري (`onSnapshot`) لتحديثات الغرفة وحركات اللاعبين.
+   - حفظ بيانات النقاط والأجوبة في مصفوفات تفاعلية فورية.
+2. **بروتوكول PeerJS / WebRTC (High-Speed Fallback):**
+   - قناة اتصال مباشرة نظير لنظير (P2P) لمشاركة النبضات وإشارات الإجابة السريعة بدقة متناهية.
+
+---
+
+## 🛠️ التقنيات المستخدمة (Tech Stack)
+
+- **الواجهة الأمامية (Frontend):**
+  - [React 19](https://react.dev/) - مكتبة بناء واجهات المستخدم الحديثة
+  - [TypeScript](https://www.typescriptlang.org/) - أمان عالي للأنماط والشيفرة
+  - [Tailwind CSS v4](https://tailwindcss.com/) - تنسيق عصري ومتجاوب بالكامل مع شاشات الهواتف والحواسب
+  - [Lucide Icons](https://lucide.dev/) - أيقونات واضحة وخفيفة
+  - [Canvas Confetti](https://www.npmjs.com/package/canvas-confetti) - احتفالات بصرية تفاعلية
+- **قاعدة البيانات والخدمات السحابية (Backend & Cloud):**
+  - **Firebase Firestore** - تخزين الجلسات، الغرف، والملفات الشخصية لحظياً
+  - **Firebase Authentication** - المصادقة بحساب غوغل والبريد والضيوف
+- **الصوتيات والشبكات (Audio & Networking):**
+  - **Web Audio API** - توليد المؤثرات الصوتية برمجياً دون الحاجة لملفات صوتية ثقيلة
+  - **PeerJS** - اتصال مباشر P2P للمزامنة الفورية
+
+---
+
+## 📂 هيكلية المشروع (Project Structure)
+
+```text
+├── src/
+│   ├── components/         # المكونات المشتركة (الأزرار، النوافذ، الإشعارات)
+│   ├── context/            # سياق التطبيق ومشاركة الحالة العامة (Auth, Game)
+│   ├── services/           # الخدمات البرمجية والبيانات
+│   │   ├── firebase.ts           # تهيئة Firebase والمصادقة وقاعدة البيانات
+│   │   ├── gameService.ts        # إدارة الغرف، الحركات، والنتائج
+│   │   ├── matchmakingService.ts # نظام البحث عن مباريات
+│   │   ├── questionService.ts    # جلب الأسئلة العشوائية ومنع التكرار
+│   │   ├── questionData.ts       # بنك الأسئلة الثقافية المتنوعة
+│   │   ├── countryData.ts        # بيانات الدول، العواصم، والأعلام
+│   │   ├── soundEffects.ts       # مؤثرات Web Audio الصوتية
+│   │   └── userService.ts        # إدارة ملفات المستخدمين وجواز السفر
+│   ├── views/              # الشاشات الرئيسية
+│   │   ├── HomeScreen.tsx        # الشاشة الرئيسية والترحيب
+│   │   ├── PlayScreen.tsx        # اختيار نمط اللعب والبحث عن غرف
+│   │   ├── GameRoomScreen.tsx    # حلبة التحدي والمباراة المباشرة
+│   │   ├── PassportScreen.tsx    # استعراض أختام جواز السفر
+│   │   ├── LeaderboardScreen.tsx # قوائم المتصدرين
+│   │   └── ProfileScreen.tsx     # الملف الشخصي والأوسمة
+│   ├── types/              # تعريفات الأنواع (TypeScript Types & Interfaces)
+│   ├── App.tsx             # التوجيه والمكون الجذري
+│   └── main.tsx            # نقطة البداية لتطبيق React
+├── firestore.rules         # قواعد الأمان المشددة لقاعدة بيانات Firestore
+├── index.html              # الصفحة الرئيسية لمدخل التطبيق
+├── package.json            # الاعتماديات وحزم npm
+└── vite.config.ts          # إعدادات أداة البناء Vite
+```
+
+---
+
+## 🚀 التشغيل والتثبيت محلياً (Setup & Installation)
+
+### المتطلبات المسبقة:
+- [Node.js](https://nodejs.org/) (الإصدار 18 أو أحدث)
+- مدير الحزم `npm`
+
+### خطوات التثبيت والتشغيل:
+1. **استنساخ المستودع أو الانتقال لمجلد المشروع:**
+   ```bash
+   cd world-challenge
+   ```
+
+2. **تثبيت الحزم البرمجية:**
+   ```bash
+   npm install
+   ```
+
+3. **بدء خادم التطوير المحلي:**
+   ```bash
+   npm run dev
+   ```
+   *سيعمل التطبيق على المنفذ الافتراضي `http://localhost:3000`.*
+
+4. **بناء النسخة الإنتاجية (Production Build):**
+   ```bash
+   npm run build
+   ```
+
+5. **فحص الأنواع البرمجية (Lint / Type Check):**
+   ```bash
+   npm run lint
+   ```
+
+---
+
+## 🔒 قواعد الأمان والبيانات (Security & Firestore)
+
+يحتوي ملف `firestore.rules` على سياسات أمان صارمة ومتقدمة:
+- منع الوصول المباشر للبيانات الحساسة أو التعديل عليها من خارج السياق المصرح به.
+- حماية وتأمين مستندات المستخدمين (`users/{userId}`) بحيث لا يستطيع تعديل البيانات الشخصية إلا صاحب الحساب نفسه.
+- إتاحة قراءة بيانات الغرف (`gameRooms`) للمشاركين فيها، مع مراقبة صلاحيات التعديل لتفادي التلاعب بالنتائج.
+
+---
+
+## 🌍 المساهمة والتطوير (Contribution)
+المشروع مبني بأسلوب مفتوح وسهل التوسع؛ نرحب بإضافة مزيد من الأسئلة الثقافية، تصحيح الترجمات، وإضافة دول وتجارب جديدة لجعل التحدي أكثر متعة وإثراءً لجميع اللاعبين حول العالم!
