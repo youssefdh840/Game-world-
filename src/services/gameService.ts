@@ -277,6 +277,18 @@ export async function syncMemoryMatchScore(
   }
   updateFallbackRoom(roomId, updates as Partial<GameRoom>);
   if (altRoomId) updateFallbackRoom(altRoomId, updates as Partial<GameRoom>);
+
+  broadcastFallbackMessage({
+    type: 'PLAYER_ANSWER',
+    roomId,
+    playerId: userId,
+    isHost,
+    score: currentScore,
+    scoreDelta: 0,
+    answer: isFinished ? `matched_${currentScore}` : '',
+    answerTime: 0,
+    questionIndex: 1,
+  });
   try {
     const cleanUpdates = sanitizeUpdates(updates);
     await Promise.all(

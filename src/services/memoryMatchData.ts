@@ -256,14 +256,14 @@ export function calculateMemoryMatchPoints(
   comboBonusPoints: number = 0
 ): number {
   const baseScore = matchedPairs * 100;
-  // Extra moves beyond the optimal 1 move per pair
+  // Gentle efficiency penalty: 5 pts per move beyond optimal, capped so earned points are never destroyed
   const extraMoves = Math.max(0, movesCount - totalPairs);
-  const penalty = extraMoves * 15;
+  const penalty = Math.min(100, extraMoves * 5);
 
   const isCompleted = matchedPairs >= totalPairs;
   const speedBonus = isCompleted ? Math.max(0, Math.floor(remainingSeconds)) * 5 : 0;
-  const completionBonus = isCompleted ? 100 : 0;
+  const completionBonus = isCompleted ? 150 : 0;
 
   const total = baseScore + comboBonusPoints + completionBonus + speedBonus - penalty;
-  return Math.max(0, total);
+  return Math.max(matchedPairs * 75, total);
 }

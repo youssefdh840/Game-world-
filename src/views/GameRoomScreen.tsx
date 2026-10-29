@@ -202,13 +202,29 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
     };
   }, [rawCurrentQ?.id, room.id, room.currentRound, room.gameMode]);
 
+  // Stable cached memory deck stored in a ref to NEVER reshuffle mid-round
+  const memoryDeckRef = useRef<{ key: string; deck: MemoryCard[] }>({ key: '', deck: [] });
+  const flipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Invariant normalized room code shared identically by host & guest
+  const normalizedRoomCode = (initialRoom.roomCode || initialRoom.id || room.roomCode || room.id || 'room')
+    .replace(/^room_code_/, '')
+    .toUpperCase();
+  const normalizedCountryCode = (initialRoom.targetCountryCode || room.targetCountryCode || '').toUpperCase() || undefined;
+
   // Memoized deterministic 4x4 Memory Match deck (8 pairs)
   // Both players get the exact identical cards in the exact same positions
   const memoryDeck: MemoryCard[] = React.useMemo(() => {
     if (!isMemoryMatch) return [];
-    const seed = `${room.id || 'room'}_memory_seed_${room.currentRound || 1}`;
-    return generateMemoryMatchDeck(seed, room.targetCountryCode);
-  }, [isMemoryMatch, room.id, room.currentRound, room.targetCountryCode]);
+    const roundNum = room.currentRound || 1;
+    const cacheKey = `${normalizedRoomCode}_memory_r${roundNum}_${normalizedCountryCode || 'global'}`;
+    if (memoryDeckRef.current.key === cacheKey && memoryDeckRef.current.deck.length > 0) {
+      return memoryDeckRef.current.deck;
+    }
+    const deck = generateMemoryMatchDeck(cacheKey, normalizedCountryCode);
+    memoryDeckRef.current = { key: cacheKey, deck };
+    return deck;
+  }, [isMemoryMatch, normalizedRoomCode, room.currentRound, normalizedCountryCode]);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const roundStartTimeRef = useRef<number>(Date.now());
@@ -741,6 +757,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       showExplanation ||
       isAdvancingRoundRef.current ||
       isCheckingPair ||
+      flippedCardIndices.length >= 2 ||
       startCountdownSec !== null
     ) {
       return;
@@ -758,6 +775,10 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
 
     // 1st card flipped
     if (flippedCardIndices.length === 0) {
+      if (flipTimeoutRef.current) {
+        clearTimeout(flipTimeoutRef.current);
+        flipTimeoutRef.current = null;
+      }
       setFlippedCardIndices([cardIndex]);
       setMismatchedIndices([]);
       return;
@@ -776,10 +797,15 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
       if (firstCard.pairId === card.pairId) {
         // MATCH!
         sounds.playCorrect();
+        if (flipTimeoutRef.current) {
+          clearTimeout(flipTimeoutRef.current);
+          flipTimeoutRef.current = null;
+        }
         const nextMatched = [...matchedPairIds, card.pairId];
         setMatchedPairIds(nextMatched);
         setLastMatchedCard(card);
         setMismatchedIndices([]);
+        setIsCheckingPair(false);
 
         const nextCombo = comboStreak + 1;
         setComboStreak(nextCombo);
@@ -814,7 +840,7 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           return copy;
         });
 
-        // Sync score to Firestore in real-time so opponent sees live score updates
+        // Sync score to Firestore & PeerJS in real-time so opponent sees live score updates
         const activeUid = auth.currentUser?.uid || user.uid;
         syncMemoryMatchScore(room.id, activeUid, newScore, isHostPlayer, isAllMatched);
 
@@ -861,12 +887,17 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
           return copy;
         });
 
-        // Automatically flip both cards face-down after 1 second delay
-        setTimeout(() => {
+        const activeUid = auth.currentUser?.uid || user.uid;
+        syncMemoryMatchScore(room.id, activeUid, newScore, isHostPlayer, false);
+
+        // Automatically flip both cards face-down after 900ms delay safely tracked in ref
+        if (flipTimeoutRef.current) clearTimeout(flipTimeoutRef.current);
+        flipTimeoutRef.current = setTimeout(() => {
           setFlippedCardIndices([]);
           setMismatchedIndices([]);
           setIsCheckingPair(false);
-        }, 1000);
+          flipTimeoutRef.current = null;
+        }, 900);
       }
     }
   };
@@ -1252,8 +1283,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
   const opponentName = isHost ? room.guestUsername : room.hostUsername;
   const opponentAvatar = isHost ? room.guestAvatar : room.hostAvatar;
   const opponentFlag = isHost ? room.guestCountryFlag : room.hostCountryFlag;
-  const opponentScore = isHost ? room.guestScore : room.hostScore;
-  const myScore = isHost ? room.hostScore : room.guestScore;
+  const opponentScore = isHost ? (room.guestScore ?? 0) : (room.hostScore ?? 0);
+  const rawMyScore = isHost ? (room.hostScore ?? 0) : (room.guestScore ?? 0);
+  const myScore = isMemoryMatch ? Math.max(memoryScore, rawMyScore) : rawMyScore;
   const opponentAnswer = isHost ? room.guestAnswer : room.hostAnswer;
   const opponentHasAnswered = Boolean(opponentAnswer && opponentAnswer !== '');
   const opponentIsCorrect = Boolean(
@@ -1650,6 +1682,9 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full">
                 {(() => {
+                  if (isMemoryMatch) {
+                    return 'Memory Match • Global Landmarks';
+                  }
                   if (isGuessNumber) {
                     return 'Guess the Number • Numbers & Logic';
                   }
@@ -1664,9 +1699,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
                   }
                   if (currentQ.category === 'mystery_food' || currentQ.subCategory === 'Food') {
                     return 'Cultural Quiz • Food';
-                  }
-                  if (isMemoryMatch) {
-                    return 'Memory Match • Global Landmarks';
                   }
                   if (currentQ.category === 'music_culture' || currentQ.subCategory === 'Music') {
                     return 'Cultural Quiz • Music';
@@ -1789,26 +1821,6 @@ export const GameRoomScreen: React.FC<GameRoomScreenProps> = ({
             {/* Interactive Gameplay Controls: Memory Match vs Guess the Number vs Word Scramble vs Multiple Choice */}
             {isMemoryMatch ? (
               <div className="space-y-4">
-                {/* Realtime Opponent Memory Progress Banner */}
-                <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-[#0E1526] border border-rose-500/25 text-xs">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-base shrink-0">{opponentFlag}</span>
-                    <span className="font-bold text-slate-300 truncate max-w-[80px] sm:max-w-[120px]">{opponentName}:</span>
-                    {opponentHasAnswered ? (
-                      <span className="text-emerald-400 font-extrabold flex items-center gap-1 shrink-0">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Cleared All 8 Pairs! ⚡</span>
-                      </span>
-                    ) : (
-                      <span className="text-cyan-400 font-medium flex items-center gap-1.5 shrink-0">
-                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                        <span>Matching card pairs...</span>
-                      </span>
-                    )}
-                  </div>
-                  <span className="font-mono font-black text-rose-400 ml-2 shrink-0">{opponentScore} pts</span>
-                </div>
-
                 {/* 4x4 Card Grid (16 Cards, 8 Pairs) */}
                 <div className="bg-[#0E1526] border border-cyan-500/25 rounded-3xl p-3.5 sm:p-5 shadow-2xl space-y-4">
                   <div className="flex items-center justify-between text-xs font-bold px-1">
